@@ -62,6 +62,11 @@
       </section>
       <section class="admin-sec">
         <h3>人員管理</h3>
+        <form id="user-pw" class="bulk-row">
+          <label for="user-pw-input">一般人暗號<small>（一次修改所有非管理員）</small></label>
+          <input id="user-pw-input" name="password" autocomplete="off" required>
+          <button type="submit" class="pixel-btn small">全部套用</button>
+        </form>
         <div id="people-list"></div>
         <form id="people-add" class="people-row add-row">
           <input name="en_name" placeholder="英文名字" required>
@@ -69,7 +74,7 @@
           <label class="chk"><input name="admin" type="checkbox">管理者</label>
           <button type="submit" class="pixel-btn small">新增</button>
         </form>
-        <p class="admin-note">每列依序是英文名字、動物、暗號。新增的人暗號預設 4638（管理者為 eva）；勾選或取消管理者時若沒改暗號，會自動換成該身分的預設暗號；刪除會釋放他認領的禮物</p>
+        <p class="admin-note">每列依序是英文名字、動物、暗號。新增的一般人暗號同上方「一般人暗號」，管理者為 eva；勾選或取消管理者時若沒改暗號，會自動換成該身分的暗號；刪除會釋放他認領的禮物</p>
       </section>
       <p id="admin-msg" class="error" hidden></p>
       <button id="admin-close" type="button" class="link-btn">關閉</button>

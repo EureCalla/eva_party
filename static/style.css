@@ -362,8 +362,30 @@ body.scene-cover #scene { object-fit: cover; }
   border: 2px solid var(--outline);
   border-radius: 0;
 }
+/* 一次修改所有非管理員的暗號 */
+.bulk-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--dress);
+  border: 3px solid var(--outline);
+}
+.bulk-row label { display: block; font-size: 0.9rem; }
+.bulk-row small { font-size: 0.75rem; opacity: 0.8; }
+.bulk-row input {
+  font: inherit;
+  font-size: 0.9rem;
+  width: 8em;
+  padding: 5px 6px;
+  color: var(--outline);
+  background: #fff;
+  border: 2px solid var(--outline);
+  border-radius: 0;
+}
+.bulk-row .pixel-btn { font-size: 0.8rem; padding: 0.3em 0.7em; box-shadow: 2px 2px 0 var(--deep); margin-left: auto; }
 .people-row .chk { display: flex; flex-direction: row; align-items: center; gap: 3px; font-size: 0.8rem; white-space: nowrap; }
-.people-row .meta { grid-column: 1 / -1; margin-top: -4px; font-size: 0.75rem; color: var(--blue); }
 .people-row .pixel-btn { font-size: 0.8rem; padding: 0.3em 0.6em; box-shadow: 2px 2px 0 var(--deep); }
 .people-row .del { background: var(--outline); }
 .add-row { padding-top: 8px; border-top: 3px dashed var(--dress); grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto; }

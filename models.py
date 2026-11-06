@@ -207,6 +207,40 @@ class GameDB:
         player = self.player_by_token(token) if token else None
         return player is not None and player["permission"] == "admin"
 
+    def get_setting(self, key: str, default: str) -> str:
+        """Return a settings value, or ``default`` when it has never been set."""
+        row = self.conn.execute(
+            "SELECT value FROM settings WHERE key = ? AND is_deleted = 0", (key,)
+        ).fetchone()
+        return row["value"] if row else default
+
+    def set_user_password(self, token: str, password: str) -> int:
+        """Set every non-admin's password at once (admins only); returns how many were changed.
+
+        The value is also saved as settings.user_password, so players added or
+        demoted later get the same password. Raises PermissionError for
+        non-admins and ValueError for a blank password.
+        """
+        password = password.strip()
+        if not password:
+            raise ValueError("暗號不能是空白")
+        with self.lock:
+            player = self.player_by_token(token) if token else None
+            if player is None or player["permission"] != "admin":
+                raise PermissionError("只有管理者可以使用")
+            cur = self.conn.execute(
+                "UPDATE players SET password = ? WHERE permission = 'user' AND is_deleted = 0", (password,)
+            )
+            self.conn.execute(
+                "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('user_password', ?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, "
+                "updated_by = excluded.updated_by",
+                (password, utc_now(), player["id"]),
+            )
+            self.conn.commit()
+        print(f"[models] user password set for {cur.rowcount} players by {player['en_name']}")
+        return cur.rowcount
+
     def get_stage(self) -> str:
         """Return the current activity stage key."""
         row = self.conn.execute("SELECT value FROM settings WHERE key = 'stage' AND is_deleted = 0").fetchone()

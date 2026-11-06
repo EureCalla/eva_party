@@ -622,19 +622,26 @@
           peopleAction({ action: "delete", id: p.id }, "已刪除 " + p.en_name);
         }
       });
-      const meta = document.createElement("span");
-      meta.className = "meta";
-      meta.textContent = p.guessed ? "已猜對" + (p.label ? "・標籤：" + p.label : "・還沒選標籤") : "還沒猜";
-      row.append(name, animal, pw, chk, save, del, meta);
+      row.append(name, animal, pw, chk, save, del);
       peopleEl.appendChild(row);
     });
+  }
+
+  const userPwForm = document.getElementById("user-pw");
+  const userPwInput = document.getElementById("user-pw-input");
+  let people = [];
+
+  function showPeople(data) {
+    people = data.players;
+    renderPeople(people);
+    userPwInput.value = data.user_password;
   }
 
   async function loadPeople() {
     const r = await api("/api/admin/players");
     if (r.status === 401) return backToLogin();
     if (!r.ok) return adminNotice(r.data.error || "讀取人員失敗");
-    renderPeople(r.data.players);
+    showPeople(r.data);
   }
 
   async function peopleAction(body, okText) {
@@ -643,7 +650,7 @@
       adminNotice(r.data.error || "操作失敗");
       return false;
     }
-    renderPeople(r.data.players);
+    showPeople(r.data);
     adminNotice(okText, true);
     await refreshState();
     return true;
@@ -668,6 +675,13 @@
     renderStageOptions();
     const s = stages.find((x) => x.key === stage);
     adminNotice("已切換到「" + (s ? s.name : stage) + "」", true);
+  });
+  userPwForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pw = userPwInput.value.trim();
+    const n = people.filter((p) => !p.admin).length;
+    if (!pw || !confirm("確定把 " + n + " 位一般人的暗號都改成「" + pw + "」？管理者的暗號不會變。")) return;
+    await peopleAction({ action: "user_password", password: pw }, "已把 " + n + " 位一般人的暗號改成「" + pw + "」");
   });
   addForm.addEventListener("submit", async (e) => {
     e.preventDefault();

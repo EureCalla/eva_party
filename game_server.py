@@ -59,12 +59,20 @@ class GameHandler(SimpleHTTPRequestHandler):
             if not self.db.is_admin(self.headers.get("X-Token")):
                 self.send_json({"error": "只有管理者可以使用"}, 403)
                 return
-            self.send_json({"players": self.db.admin_players()})
+            self.send_json(self.admin_people())
         else:
             super().do_GET()
 
+    def user_password(self) -> str:
+        """Return the current password for non-admins (settings.user_password, else the default)."""
+        return self.db.get_setting("user_password", cms.DEFAULT_PASSWORD)
+
+    def admin_people(self) -> dict[str, Any]:
+        """Return the admin page's people list plus the shared non-admin password."""
+        return {"players": self.db.admin_players(), "user_password": self.user_password()}
+
     def admin_players_action(self, data: dict[str, Any]) -> None:
-        """Add, update or delete a player from the admin page (admins only)."""
+        """Add, update or delete a player, or set every non-admin's password (admins only)."""
         caller = self.db.player_by_token(self.headers.get("X-Token", ""))
         if caller is None or caller["permission"] != "admin":
             self.send_json({"error": "只有管理者可以使用"}, 403)
@@ -73,8 +81,10 @@ class GameHandler(SimpleHTTPRequestHandler):
         permission = "admin" if data.get("admin") else "user"
         try:
             if action == "add":
-                password = cms.ADMIN_PASSWORD if permission == "admin" else cms.DEFAULT_PASSWORD
+                password = cms.ADMIN_PASSWORD if permission == "admin" else self.user_password()
                 self.db.add_player(str(data.get("en_name", "")), str(data.get("animal", "")), password, permission)
+            elif action == "user_password":
+                self.db.set_user_password(self.headers.get("X-Token", ""), str(data.get("password", "")))
             elif action in ("update", "delete"):
                 player_id = int(data.get("id"))
                 if player_id == caller["id"] and (action == "delete" or permission != "admin"):
@@ -84,16 +94,19 @@ class GameHandler(SimpleHTTPRequestHandler):
                     self.db.update_player(
                         player_id, str(data.get("en_name", "")), str(data.get("animal", "")), permission,
                         None if password is None else str(password),
-                        {"admin": cms.ADMIN_PASSWORD, "user": cms.DEFAULT_PASSWORD},
+                        {"admin": cms.ADMIN_PASSWORD, "user": self.user_password()},
                     )
                 else:
                     self.db.delete_player(player_id)
             else:
                 raise ValueError("不認得的動作")
+        except PermissionError as e:
+            self.send_json({"error": str(e)}, 403)
+            return
         except (TypeError, ValueError) as e:
             self.send_json({"error": str(e)}, 400)
             return
-        self.send_json({"result": "ok", "players": self.db.admin_players()})
+        self.send_json({"result": "ok", **self.admin_people()})
 
     def do_POST(self) -> None:
         """Handle login, guesses, labels and admin actions."""
