@@ -585,6 +585,10 @@
       const animal = document.createElement("input");
       animal.value = p.animal;
       animal.setAttribute("aria-label", "動物");
+      const pw = document.createElement("input");
+      pw.value = p.password;
+      pw.setAttribute("aria-label", "暗號");
+      pw.title = "暗號（改權限時沒手動改，會自動換成該身分的預設暗號）";
       const chk = document.createElement("label");
       chk.className = "chk";
       const admin = document.createElement("input");
@@ -597,7 +601,14 @@
       save.textContent = "儲存";
       save.addEventListener("click", () =>
         peopleAction(
-          { action: "update", id: p.id, en_name: name.value, animal: animal.value, admin: admin.checked },
+          {
+            action: "update",
+            id: p.id,
+            en_name: name.value,
+            animal: animal.value,
+            password: pw.value,
+            admin: admin.checked,
+          },
           "已更新 " + name.value
         )
       );
@@ -614,7 +625,7 @@
       const meta = document.createElement("span");
       meta.className = "meta";
       meta.textContent = p.guessed ? "已猜對" + (p.label ? "・標籤：" + p.label : "・還沒選標籤") : "還沒猜";
-      row.append(name, animal, chk, save, del, meta);
+      row.append(name, animal, pw, chk, save, del, meta);
       peopleEl.appendChild(row);
     });
   }

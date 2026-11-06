@@ -80,8 +80,12 @@ class GameHandler(SimpleHTTPRequestHandler):
                 if player_id == caller["id"] and (action == "delete" or permission != "admin"):
                     raise ValueError("不能刪除自己，也不能拿掉自己的管理者權限")
                 if action == "update":
-                    self.db.update_player(player_id, str(data.get("en_name", "")),
-                                          str(data.get("animal", "")), permission)
+                    password = data.get("password")
+                    self.db.update_player(
+                        player_id, str(data.get("en_name", "")), str(data.get("animal", "")), permission,
+                        None if password is None else str(password),
+                        {"admin": cms.ADMIN_PASSWORD, "user": cms.DEFAULT_PASSWORD},
+                    )
                 else:
                     self.db.delete_player(player_id)
             else:

@@ -104,10 +104,21 @@ class GameDB:
         print(f"[models] player added: {en_name} ({animal}, {permission})")
         return new_id
 
-    def update_player(self, player_id: int, en_name: str, animal: str, permission: str) -> None:
-        """Rename a player, change their animal or permission; claims and labels are kept.
+    def update_player(
+        self,
+        player_id: int,
+        en_name: str,
+        animal: str,
+        permission: str,
+        password: str | None,
+        role_passwords: dict[str, str],
+    ) -> None:
+        """Edit a player's name, animal, permission and password; claims and labels are kept.
 
-        Raises ValueError on empty fields, an unknown permission or a duplicate name.
+        When the permission changes and no new password was typed, the password
+        switches to that role's default (``role_passwords``). A typed password
+        always wins. Raises ValueError on empty fields, an unknown permission or
+        a duplicate name.
         """
         en_name, animal = en_name.strip(), animal.strip()
         if not en_name or not animal:
@@ -115,19 +126,32 @@ class GameDB:
         if permission not in PERMISSIONS:
             raise ValueError(f"permission 只能是 {' / '.join(PERMISSIONS)}")
         with self.lock:
+            row = self.conn.execute(
+                "SELECT permission, password FROM players WHERE id = ? AND is_deleted = 0", (player_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("找不到這個使用者")
             dup = self.conn.execute(
                 "SELECT 1 FROM players WHERE en_name = ? AND id != ?", (en_name, player_id)
             ).fetchone()
             if dup:
                 raise ValueError(f"{en_name} 已經有人用了")
-            cur = self.conn.execute(
-                "UPDATE players SET en_name = ?, animal = ?, permission = ? WHERE id = ? AND is_deleted = 0",
-                (en_name, animal, permission, player_id),
+            typed = (password or "").strip()
+            if password is not None and not typed:
+                raise ValueError("暗號不能是空白")
+            if typed and typed != row["password"]:
+                new_password = typed
+            elif permission != row["permission"]:
+                new_password = role_passwords[permission]
+            else:
+                new_password = row["password"]
+            self.conn.execute(
+                "UPDATE players SET en_name = ?, animal = ?, permission = ?, password = ? WHERE id = ?",
+                (en_name, animal, permission, new_password, player_id),
             )
             self.conn.commit()
-        if cur.rowcount == 0:
-            raise ValueError("找不到這個使用者")
-        print(f"[models] player updated: #{player_id} -> {en_name} ({animal}, {permission})")
+        changed = "，暗號已更新" if new_password != row["password"] else ""
+        print(f"[models] player updated: #{player_id} -> {en_name} ({animal}, {permission}){changed}")
 
     def delete_player(self, player_id: int) -> None:
         """Soft-delete a player and their gift; a gift they had claimed is released.
@@ -159,9 +183,9 @@ class GameDB:
         ).fetchall()
 
     def admin_players(self) -> list[dict[str, Any]]:
-        """Return players for the admin page, alphabetical, with whether they have guessed and their label."""
+        """Return players for the admin page, alphabetical, with password, guess status and label."""
         rows = self.conn.execute(
-            "SELECT p.id, p.en_name, p.animal, p.permission, g.label AS my_label, g.id AS my_gift "
+            "SELECT p.id, p.en_name, p.animal, p.permission, p.password, g.label AS my_label, g.id AS my_gift "
             "FROM players p LEFT JOIN players g ON g.claimed_by = p.id AND g.is_deleted = 0 "
             "WHERE p.is_deleted = 0 ORDER BY p.en_name COLLATE NOCASE"
         ).fetchall()
@@ -171,6 +195,7 @@ class GameDB:
                 "en_name": r["en_name"],
                 "animal": r["animal"],
                 "admin": r["permission"] == "admin",
+                "password": r["password"],
                 "guessed": r["my_gift"] is not None,
                 "label": r["my_label"],
             }
