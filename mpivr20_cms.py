@@ -9,7 +9,7 @@ DB_PATH: Path = Path(r"\\mpi-file01\VPCRD2-AI\86_LEVELOO\2026_xmas\game.db")
 ROSTER_PATH: Path = ROOT_DIR / "roster.json"
 
 HOST: str = "0.0.0.0"
-PORT: int = 8765
+PORT: int = 8477
 DEFAULT_PASSWORD: str = "eva"
 
 # 禮物標籤：邀請函規定禮物名稱需包含的字，每份禮物選一個
