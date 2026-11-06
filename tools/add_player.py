@@ -4,7 +4,7 @@ Players (and their gifts) live only in the database. Usage:
 
     python tools/add_player.py Eden 魷魚            # 預設暗號 4638
     python tools/add_player.py Eden 魷魚 --password xyz
-    python tools/add_player.py Eden 魷魚 --admin    # 給管理者權限
+    python tools/add_player.py Eden 魷魚 --admin    # 給管理者權限，預設暗號 eva
     python tools/add_player.py --list
 
 New gifts go after the existing ones, so claims already made are untouched.
@@ -27,7 +27,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="新增或列出交換禮物遊戲的使用者")
     parser.add_argument("en_name", nargs="?", help="英文名字（登入選單顯示的名字）")
     parser.add_argument("animal", nargs="?", help="動物（禮物牆上顯示「{動物}的禮物」）")
-    parser.add_argument("--password", default=cms.DEFAULT_PASSWORD, help="暗號，預設 4638")
+    parser.add_argument("--password", help="暗號，預設一般人 4638、管理者 eva")
     parser.add_argument("--admin", action="store_true", help="給管理者權限（permission = admin）")
     parser.add_argument("--list", action="store_true", help="列出目前所有使用者")
     args = parser.parse_args()
@@ -35,7 +35,8 @@ def main() -> None:
     db = GameDB(cms.DB_PATH)
     if args.en_name and args.animal:
         try:
-            db.add_player(args.en_name, args.animal, args.password, "admin" if args.admin else "user")
+            password = args.password or (cms.ADMIN_PASSWORD if args.admin else cms.DEFAULT_PASSWORD)
+            db.add_player(args.en_name, args.animal, password, "admin" if args.admin else "user")
         except ValueError as e:
             sys.exit(f"[add_player] {e}")
     elif not args.list:

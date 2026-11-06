@@ -9,7 +9,8 @@ DB_PATH: Path = Path(r"\\mpi-file01\VPCRD2-AI\86_LEVELOO\2026_xmas\game.db")
 
 HOST: str = "0.0.0.0"
 PORT: int = 8477
-DEFAULT_PASSWORD: str = "4638"
+DEFAULT_PASSWORD: str = "4638"  # 一般使用者的暗號
+ADMIN_PASSWORD: str = "eva"  # 管理者的暗號
 
 # 禮物標籤：邀請函規定禮物名稱需包含的字，每份禮物選一個
 GIFT_LABELS: list[str] = ["寶", "貝", "珍珠", "欣", "Eva", "Baby", "欣加Pearl", "媽媽", "男", "孩", "威"]

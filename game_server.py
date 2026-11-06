@@ -73,8 +73,8 @@ class GameHandler(SimpleHTTPRequestHandler):
         permission = "admin" if data.get("admin") else "user"
         try:
             if action == "add":
-                self.db.add_player(str(data.get("en_name", "")), str(data.get("animal", "")),
-                                   cms.DEFAULT_PASSWORD, permission)
+                password = cms.ADMIN_PASSWORD if permission == "admin" else cms.DEFAULT_PASSWORD
+                self.db.add_player(str(data.get("en_name", "")), str(data.get("animal", "")), password, permission)
             elif action in ("update", "delete"):
                 player_id = int(data.get("id"))
                 if player_id == caller["id"] and (action == "delete" or permission != "admin"):
