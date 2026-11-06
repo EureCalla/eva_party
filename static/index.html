@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>好孕敲門・交換禮物 Party</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 像素場景：邀請函動畫與登入頁背景共用 -->
+  <canvas id="scene" width="1920" height="1080"></canvas>
+
+  <!-- 1. 邀請函動畫 -->
+  <section id="intro" class="screen">
+    <button id="enter" class="pixel-btn" hidden>進入派對</button>
+    <p id="skip-hint">點一下畫面可以跳過</p>
+  </section>
+
+  <!-- 2. 登入 -->
+  <section id="login" class="screen" hidden>
+    <form id="login-card" class="card">
+      <h1 class="card-title">好孕敲門</h1>
+      <p class="card-sub">交換禮物 Party</p>
+      <label>你是誰？
+        <select id="login-name" required>
+          <option value="" disabled selected>選擇你的名字</option>
+        </select>
+      </label>
+      <label>暗號
+        <input id="login-password" type="password" autocomplete="off" required>
+      </label>
+      <p id="login-error" class="error" hidden></p>
+      <button type="submit" class="pixel-btn">登入</button>
+    </form>
+  </section>
+
+  <!-- 3. 禮物牆 -->
+  <section id="wall" class="screen" hidden>
+    <header class="wall-head">
+      <canvas id="wall-sign" width="400" height="176"></canvas>
+      <ol id="stage-bar" aria-label="活動進度"></ol>
+      <p id="wall-hint">猜猜哪個是你的禮物？</p>
+    </header>
+    <div id="gifts"></div>
+  </section>
+
+  <!-- 右上角：預告片、邀請函規則 -->
+  <div id="top-btns" hidden>
+    <button id="admin-btn" type="button" class="pixel-btn small admin" hidden>管理</button>
+    <button id="trailer-btn" type="button" class="pixel-btn small">預告片</button>
+    <button id="rules-btn" type="button" class="pixel-btn small">邀請函</button>
+  </div>
+
+  <!-- 管理頁：只有管理者看得到；所有動作都由 server 再檢查一次權限 -->
+  <div id="admin" class="overlay" hidden>
+    <div class="card admin-card">
+      <h2 class="card-title picker-title">管理</h2>
+      <section class="admin-sec">
+        <h3>活動階段</h3>
+        <div id="stage-options"></div>
+        <button id="stage-submit" type="button" class="pixel-btn small">送出</button>
+      </section>
+      <section class="admin-sec">
+        <h3>人員管理</h3>
+        <div id="people-list"></div>
+        <form id="people-add" class="people-row add-row">
+          <input name="en_name" placeholder="英文名字" required>
+          <input name="animal" placeholder="動物" required>
+          <label class="chk"><input name="admin" type="checkbox">管理者</label>
+          <button type="submit" class="pixel-btn small">新增</button>
+        </form>
+        <p class="admin-note">每列依序是英文名字、動物、暗號。新增的人暗號預設 4638（管理者為 eva）；勾選或取消管理者時若沒改暗號，會自動換成該身分的預設暗號；刪除會釋放他認領的禮物</p>
+      </section>
+      <p id="admin-msg" class="error" hidden></p>
+      <button id="admin-close" type="button" class="link-btn">關閉</button>
+    </div>
+  </div>
+  <!-- 預告片：與邀請影片同一份像素動畫，在瀏覽器即時播放 -->
+  <div id="trailer" class="overlay" hidden>
+    <div class="rules-box">
+      <canvas id="trailer-canvas" width="1920" height="1080"></canvas>
+      <div class="player-bar">
+        <button id="trailer-play" type="button" class="pixel-btn small">暫停</button>
+        <input id="trailer-seek" type="range" min="0" max="28" step="0.05" value="0" aria-label="播放進度">
+        <span id="trailer-time">0:00</span>
+      </div>
+      <button id="trailer-close" type="button" class="pixel-btn">關閉</button>
+    </div>
+  </div>
+  <div id="rules" class="overlay" hidden>
+    <div class="rules-box">
+      <canvas id="rules-letter" width="900" height="594"></canvas>
+      <dl class="party-info">
+        <div class="info-row">
+          <dt>時間</dt>
+          <dd><strong>2026/11/27（五）上午 10:00</strong> 開始<br>中午一起吃飯</dd>
+        </div>
+        <div class="info-row">
+          <dt>預算</dt>
+          <dd><strong>NT$300 ～ NT$600</strong>，歡迎誠意加碼<br><span class="warn">嚴禁低於 NT$300</span></dd>
+        </div>
+        <div class="info-row">
+          <dt>禮物</dt>
+          <dd>不限<strong>用品</strong>或<strong>食物</strong><br>名稱裡的字用<strong>諧音</strong>也可以</dd>
+        </div>
+      </dl>
+      <button id="rules-close" type="button" class="pixel-btn">關閉</button>
+    </div>
+  </div>
+
+  <!-- 猜對後選禮物標籤（點自己的禮物可重選） -->
+  <div id="label-picker" class="overlay" hidden>
+    <div class="card">
+      <h2 class="card-title picker-title">幫禮物選標籤</h2>
+      <p class="card-sub">你的禮物名稱裡包含哪個字？</p>
+      <div id="label-options"></div>
+      <button id="label-cancel" type="button" class="link-btn">等一下再選</button>
+    </div>
+  </div>
+
+  <script src="sprites.js"></script>
+  <script src="trailer.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

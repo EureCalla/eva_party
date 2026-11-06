@@ -1,0 +1,409 @@
+/* 色票沿用邀請影片 SPEC.md 的 LOOK */
+:root {
+  --outline: #6B5A55;
+  --wall: #5B3A2A;
+  --wall-line: #4E3123;
+  --floor: #8B5A3C;
+  --cream: #FFF6EA;
+  --cream-line: #F5E4D6;
+  --pink: #DE6A93;
+  --pink-frame: #D98AA0;
+  --dress: #F6B7C8;
+  --blue: #5B98D6;
+  --baby-blue: #BFDDF5;
+  --deep: #3A2418;
+  --font: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--deep);
+  color: var(--outline);
+  font-family: var(--font);
+  font-weight: 700;
+}
+
+[hidden] { display: none !important; }
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+body.scene-cover #scene { object-fit: cover; }
+
+.screen {
+  position: relative;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ---------- 共用按鈕：硬邊投影，不發光 ---------- */
+.pixel-btn {
+  font: inherit;
+  font-size: 1.2rem;
+  letter-spacing: 0.1em;
+  color: var(--cream);
+  background: var(--pink);
+  border: 3px solid var(--outline);
+  box-shadow: 4px 4px 0 var(--deep);
+  padding: 0.6em 1.6em;
+  cursor: pointer;
+}
+.pixel-btn:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--deep); }
+
+/* ---------- 1. 邀請函 ---------- */
+#intro { cursor: pointer; }
+#enter {
+  position: fixed;
+  left: 50%;
+  bottom: 8vh;
+  transform: translateX(-50%);
+}
+#enter:active { transform: translate(calc(-50% + 3px), 3px); }
+#skip-hint {
+  position: fixed;
+  right: 16px;
+  bottom: 8px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--cream-line);
+  opacity: 0.7;
+}
+
+/* ---------- 2. 登入 ---------- */
+#login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.card {
+  width: min(360px, 100%);
+  background: var(--cream);
+  border: 6px solid var(--pink-frame);
+  outline: 3px solid var(--outline);
+  box-shadow: 6px 6px 0 var(--deep);
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card-title { margin: 0; text-align: center; color: var(--pink); font-size: 2.2rem; letter-spacing: 0.15em; }
+.card-sub { margin: -10px 0 4px; text-align: center; color: var(--blue); font-size: 1.1rem; }
+.card label { display: flex; flex-direction: column; gap: 6px; font-size: 0.95rem; }
+.card select, .card input {
+  font: inherit;
+  font-size: 1rem;
+  padding: 8px 10px;
+  color: var(--outline);
+  background: #fff;
+  border: 3px solid var(--outline);
+  border-radius: 0;
+}
+.error { margin: 0; color: var(--pink); font-size: 0.9rem; text-align: center; }
+.shake { animation: shake 0.45s; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+/* ---------- 3. 禮物牆 ---------- */
+#wall {
+  /* 木牆：水平木紋，硬邊條紋不做漸層過渡 */
+  background:
+    repeating-linear-gradient(to bottom, var(--wall) 0 56px, var(--wall-line) 56px 64px);
+  padding: 12px 16px 40px;
+}
+.wall-head { text-align: center; }
+#wall-sign {
+  width: min(420px, 90vw);
+  image-rendering: pixelated;
+}
+#wall-hint {
+  margin: 4px 0 16px;
+  color: var(--cream);
+  font-size: clamp(1rem, 4vw, 1.4rem);
+  letter-spacing: 0.08em;
+}
+#gifts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(6px, 2vw, 20px);
+  max-width: 760px;
+  margin: 0 auto;
+}
+.gift {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px;
+  background: none;
+  border: 3px solid transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.gift canvas { width: 100%; image-rendering: pixelated; }
+.gift .label {
+  color: var(--cream);
+  font-size: clamp(0.62rem, 2.6vw, 1rem);
+  line-height: 1.25;
+  text-align: center;
+  word-break: keep-all;
+}
+.gift.claimed { cursor: default; }
+.gift.mine { border-color: var(--dress); background: rgba(246, 183, 200, 0.18); cursor: pointer; }
+.gift .nope { color: var(--dress); }
+#wall.done .gift:not(.mine) { cursor: default; }
+
+/* 禮物上的標籤牌：底色同禮物包裝紙 */
+.tag {
+  font-size: clamp(0.62rem, 2.6vw, 0.95rem);
+  padding: 1px 6px;
+  border: 2px solid var(--outline);
+  color: var(--outline);
+  white-space: nowrap;
+}
+.tag:empty { visibility: hidden; }
+
+/* ---------- 邀請函按鈕與彈窗 ---------- */
+.pixel-btn.small { font-size: 0.9rem; padding: 0.4em 0.9em; }
+#top-btns {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+}
+#trailer-canvas {
+  width: 100%;
+  image-rendering: pixelated;
+  border: 4px solid var(--pink-frame);
+  box-shadow: 6px 6px 0 var(--deep);
+}
+.player-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  color: var(--cream);
+  font-size: 0.9rem;
+}
+.player-bar .pixel-btn { min-width: 4.5em; }
+#trailer-seek { flex: 1; accent-color: var(--pink); }
+/* 窄螢幕招牌會撞到右上角按鈕，往下讓位 */
+@media (max-width: 760px) {
+  #wall { padding-top: 56px; }
+}
+.rules-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(720px, 100%);
+}
+#rules-letter {
+  width: 100%;
+  image-rendering: pixelated;
+  box-shadow: 6px 6px 0 var(--deep);
+}
+/* 小螢幕上邀請函＋派對資訊可能超過一頁，允許捲動 */
+#rules { align-items: flex-start; overflow-y: auto; }
+#rules .rules-box { margin: auto 0; }
+
+/* 派對資訊：與邀請函同色系的奶油白卡片 */
+.party-info {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 14px 20px;
+  background: #F4ECDD;
+  border: 6px solid var(--pink-frame);
+  outline: 3px solid var(--outline);
+  box-shadow: 6px 6px 0 var(--deep);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.info-row { display: flex; gap: 14px; align-items: baseline; }
+.info-row dt {
+  flex: none;
+  padding: 2px 10px;
+  color: var(--cream);
+  background: var(--pink);
+  border: 2px solid var(--outline);
+  letter-spacing: 0.15em;
+}
+.info-row dd {
+  margin: 0;
+  color: #4A2C17;
+  font-size: clamp(0.95rem, 3.6vw, 1.15rem);
+  line-height: 1.55;
+}
+.info-row strong { color: var(--blue); }
+.info-row .warn { color: var(--pink); }
+
+/* ---------- 活動進度條：節點以線串起，硬邊像素風 ---------- */
+#stage-bar {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0;
+  list-style: none;
+  margin: 10px auto 2px;
+  padding: 0;
+  max-width: 640px;
+}
+#stage-bar li {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--cream-line);
+  font-size: clamp(0.66rem, 2.8vw, 0.95rem);
+  text-align: center;
+  opacity: 0.75;
+}
+/* 節點之間的連線 */
+#stage-bar li + li::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 50%;
+  width: 100%;
+  height: 4px;
+  background: var(--outline);
+  z-index: 0;
+}
+#stage-bar li.done + li::before,
+#stage-bar li.current + li.current::before { background: var(--pink); }
+#stage-bar .dot {
+  position: relative;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  background: var(--wall);
+  border: 3px solid var(--cream-line);
+}
+#stage-bar li.done { opacity: 1; }
+#stage-bar li.done .dot { background: var(--pink); border-color: var(--outline); }
+#stage-bar li.current { opacity: 1; color: var(--cream); }
+#stage-bar li.current .dot {
+  width: 18px;
+  height: 18px;
+  margin-top: -2px;
+  background: var(--dress);
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px var(--outline);
+}
+#stage-bar li.current .name {
+  padding: 1px 6px;
+  color: var(--cream);
+  background: var(--pink);
+  border: 2px solid var(--outline);
+}
+#wall.locked .gift { cursor: default; }
+
+/* ---------- 管理頁 ---------- */
+.pixel-btn.admin { background: var(--blue); }
+#admin { align-items: flex-start; overflow-y: auto; }
+.admin-card { width: min(640px, 100%); margin: auto 0; }
+.admin-sec { display: flex; flex-direction: column; gap: 10px; }
+.admin-sec h3 {
+  margin: 0;
+  padding-bottom: 4px;
+  font-size: 1.05rem;
+  color: var(--pink);
+  border-bottom: 3px dashed var(--dress);
+}
+.admin-sec > .pixel-btn { align-self: flex-end; }
+#stage-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#stage-options label {
+  display: flex;
+  flex-direction: row; /* 蓋掉 .card label 的直式排列 */
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 3px solid var(--outline);
+  cursor: pointer;
+}
+#stage-options label.now { background: var(--dress); }
+#stage-options input { accent-color: var(--pink); }
+#people-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+.people-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.7fr) auto auto auto;
+  gap: 6px;
+  align-items: center;
+}
+.people-row input:not([type="checkbox"]) {
+  font: inherit;
+  font-size: 0.9rem;
+  min-width: 0;
+  padding: 5px 6px;
+  color: var(--outline);
+  background: #fff;
+  border: 2px solid var(--outline);
+  border-radius: 0;
+}
+.people-row .chk { display: flex; flex-direction: row; align-items: center; gap: 3px; font-size: 0.8rem; white-space: nowrap; }
+.people-row .meta { grid-column: 1 / -1; margin-top: -4px; font-size: 0.75rem; color: var(--blue); }
+.people-row .pixel-btn { font-size: 0.8rem; padding: 0.3em 0.6em; box-shadow: 2px 2px 0 var(--deep); }
+.people-row .del { background: var(--outline); }
+.add-row { padding-top: 8px; border-top: 3px dashed var(--dress); grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto; }
+.admin-note { margin: 0; font-size: 0.75rem; color: var(--outline); opacity: 0.8; }
+#admin-msg.ok { color: var(--blue); }
+
+/* ---------- 標籤選單 ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(58, 36, 24, 0.72);
+}
+.picker-title { font-size: 1.6rem; }
+#label-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.label-opt {
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 10px 4px;
+  color: var(--outline);
+  border: 3px solid var(--outline);
+  box-shadow: 3px 3px 0 var(--deep);
+  cursor: pointer;
+}
+.label-opt.current { outline: 3px solid var(--pink); outline-offset: 2px; }
+.label-opt:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--deep); }
+.link-btn {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--outline);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
