@@ -1,0 +1,211 @@
+/* 色票沿用邀請影片 SPEC.md 的 LOOK */
+:root {
+  --outline: #6B5A55;
+  --wall: #5B3A2A;
+  --wall-line: #4E3123;
+  --floor: #8B5A3C;
+  --cream: #FFF6EA;
+  --cream-line: #F5E4D6;
+  --pink: #DE6A93;
+  --pink-frame: #D98AA0;
+  --dress: #F6B7C8;
+  --blue: #5B98D6;
+  --baby-blue: #BFDDF5;
+  --deep: #3A2418;
+  --font: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--deep);
+  color: var(--outline);
+  font-family: var(--font);
+  font-weight: 700;
+}
+
+[hidden] { display: none !important; }
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+body.scene-cover #scene { object-fit: cover; }
+
+.screen {
+  position: relative;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ---------- 共用按鈕：硬邊投影，不發光 ---------- */
+.pixel-btn {
+  font: inherit;
+  font-size: 1.2rem;
+  letter-spacing: 0.1em;
+  color: var(--cream);
+  background: var(--pink);
+  border: 3px solid var(--outline);
+  box-shadow: 4px 4px 0 var(--deep);
+  padding: 0.6em 1.6em;
+  cursor: pointer;
+}
+.pixel-btn:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--deep); }
+
+/* ---------- 1. 邀請函 ---------- */
+#intro { cursor: pointer; }
+#enter {
+  position: fixed;
+  left: 50%;
+  bottom: 8vh;
+  transform: translateX(-50%);
+}
+#enter:active { transform: translate(calc(-50% + 3px), 3px); }
+#skip-hint {
+  position: fixed;
+  right: 16px;
+  bottom: 8px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--cream-line);
+  opacity: 0.7;
+}
+
+/* ---------- 2. 登入 ---------- */
+#login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.card {
+  width: min(360px, 100%);
+  background: var(--cream);
+  border: 6px solid var(--pink-frame);
+  outline: 3px solid var(--outline);
+  box-shadow: 6px 6px 0 var(--deep);
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card-title { margin: 0; text-align: center; color: var(--pink); font-size: 2.2rem; letter-spacing: 0.15em; }
+.card-sub { margin: -10px 0 4px; text-align: center; color: var(--blue); font-size: 1.1rem; }
+.card label { display: flex; flex-direction: column; gap: 6px; font-size: 0.95rem; }
+.card select, .card input {
+  font: inherit;
+  font-size: 1rem;
+  padding: 8px 10px;
+  color: var(--outline);
+  background: #fff;
+  border: 3px solid var(--outline);
+  border-radius: 0;
+}
+.error { margin: 0; color: var(--pink); font-size: 0.9rem; text-align: center; }
+.shake { animation: shake 0.45s; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+/* ---------- 3. 禮物牆 ---------- */
+#wall {
+  /* 木牆：水平木紋，硬邊條紋不做漸層過渡 */
+  background:
+    repeating-linear-gradient(to bottom, var(--wall) 0 56px, var(--wall-line) 56px 64px);
+  padding: 12px 16px 40px;
+}
+.wall-head { text-align: center; }
+#wall-sign {
+  width: min(420px, 90vw);
+  image-rendering: pixelated;
+}
+#wall-hint {
+  margin: 4px 0 16px;
+  color: var(--cream);
+  font-size: clamp(1rem, 4vw, 1.4rem);
+  letter-spacing: 0.08em;
+}
+#gifts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(6px, 2vw, 20px);
+  max-width: 760px;
+  margin: 0 auto;
+}
+.gift {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px;
+  background: none;
+  border: 3px solid transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.gift canvas { width: 100%; image-rendering: pixelated; }
+.gift .label {
+  color: var(--cream);
+  font-size: clamp(0.62rem, 2.6vw, 1rem);
+  line-height: 1.25;
+  text-align: center;
+  word-break: keep-all;
+}
+.gift.claimed { cursor: default; }
+.gift.mine { border-color: var(--dress); background: rgba(246, 183, 200, 0.18); cursor: pointer; }
+.gift .nope { color: var(--dress); }
+#wall.done .gift:not(.mine) { cursor: default; }
+
+/* 禮物上的標籤牌：底色同禮物包裝紙 */
+.tag {
+  font-size: clamp(0.62rem, 2.6vw, 0.95rem);
+  padding: 1px 6px;
+  border: 2px solid var(--outline);
+  color: var(--outline);
+  white-space: nowrap;
+}
+.tag:empty { visibility: hidden; }
+
+/* ---------- 標籤選單 ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(58, 36, 24, 0.72);
+}
+.picker-title { font-size: 1.6rem; }
+#label-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.label-opt {
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 10px 4px;
+  color: var(--outline);
+  border: 3px solid var(--outline);
+  box-shadow: 3px 3px 0 var(--deep);
+  cursor: pointer;
+}
+.label-opt.current { outline: 3px solid var(--pink); outline-offset: 2px; }
+.label-opt:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--deep); }
+.link-btn {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--outline);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}

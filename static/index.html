@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>好孕敲門・交換禮物 Party</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 像素場景：邀請函動畫與登入頁背景共用 -->
+  <canvas id="scene" width="1920" height="1080"></canvas>
+
+  <!-- 1. 邀請函動畫 -->
+  <section id="intro" class="screen">
+    <button id="enter" class="pixel-btn" hidden>進入派對</button>
+    <p id="skip-hint">點一下畫面可以跳過</p>
+  </section>
+
+  <!-- 2. 登入 -->
+  <section id="login" class="screen" hidden>
+    <form id="login-card" class="card">
+      <h1 class="card-title">好孕敲門</h1>
+      <p class="card-sub">交換禮物 Party</p>
+      <label>你是誰？
+        <select id="login-name" required>
+          <option value="" disabled selected>選擇你的名字</option>
+        </select>
+      </label>
+      <label>密碼
+        <input id="login-password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="login-error" class="error" hidden></p>
+      <button type="submit" class="pixel-btn">登入</button>
+    </form>
+  </section>
+
+  <!-- 3. 禮物牆 -->
+  <section id="wall" class="screen" hidden>
+    <header class="wall-head">
+      <canvas id="wall-sign" width="400" height="176"></canvas>
+      <p id="wall-hint">猜猜哪個是你的禮物？</p>
+    </header>
+    <div id="gifts"></div>
+  </section>
+
+  <!-- 猜對後選禮物標籤（點自己的禮物可重選） -->
+  <div id="label-picker" class="overlay" hidden>
+    <div class="card">
+      <h2 class="card-title picker-title">幫禮物選標籤</h2>
+      <p class="card-sub">你的禮物名稱裡包含哪個字？</p>
+      <div id="label-options"></div>
+      <button id="label-cancel" type="button" class="link-btn">等一下再選</button>
+    </div>
+  </div>
+
+  <script src="sprites.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
