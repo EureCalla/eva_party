@@ -44,7 +44,9 @@ python app.py
 
 登入頁與禮物牆右上角有「預告片」與「邀請函」按鈕：
 - 預告片：與邀請影片同一份像素動畫，在瀏覽器即時播放（`static/trailer.js`），可暫停、拖動進度、重播
-  - 播放列下方是集數按鈕，像影集一樣可以切換；只列已經做好的集數，目前只有第一集
+  - 播放列下方是集數按鈕，像影集一樣可以切換；只列已經做好的集數
+  - 第一集（28 秒）：小貓包禮物、懷孕、換洋裝、讀邀請函、店門口翻招牌
+  - 第二集（30 秒，`static/ep2.js`）：小貓散步遇到狐獴、水獺、長頸鹿圍觀大象吹茶葉蛋，蛋掉到狐獴頭上；小貓拋名牌公布名字（狐獴 Ethan、水獺 Ann、長頸鹿 Charlotte、大象 Allen），大家跟著小貓走出畫面
 - 邀請函：邀請函規則，加上派對時間與預算
 
 ## 資料
@@ -60,12 +62,12 @@ python app.py
 
 ## 開發
 
-- 預告片改了（`video/compositions/story.html`）要重新產生：`python tools/build_trailer.py`
+- 預告片改了（`video/compositions/` 下的任一集）要重新產生：`python tools/build_trailer.py`
   - 不用 mp4 是因為匯出的影片是 mp4v 編碼，瀏覽器與手機都播不了
-- 新增一集（以第二集為例）：
-  1. 在 `video/compositions/` 放 `ep2.html`（同 `story.html` 的格式：canvas id 為 `story-canvas`、有 `/*SPRITES*/` 區塊與 `const state = { t: 0 };`）
-  2. `tools/build_trailer.py` 的 `EPISODES` 加一筆 `(2, "第二集", "ep2.html", "ep2.js")`，執行 `python tools/build_trailer.py`
-  3. `static/index.html` 在 `trailer.js` 後面加 `<script src="ep2.js"></script>`，集數按鈕就會自動出現
+- 新增一集（以第三集為例）：
+  1. 在 `video/compositions/` 放 `ep3.html`（同 `ep2.html` 的格式：canvas id 為 `story-canvas`、有 `/*SPRITES*/` 區塊與 `const state = { t: 0 };`），並加進 `export_pieces.py` 的 `COMPOSITIONS`
+  2. `tools/build_trailer.py` 的 `EPISODES` 加一筆 `(3, "第三集", "ep3.html", "ep3.js")`，執行 `python tools/build_trailer.py`
+  3. `static/index.html` 在 `ep2.js` 後面加 `<script src="ep3.js"></script>`，集數按鈕就會自動出現
 
 - `http://localhost:8477/?t=2.5`：把邀請函動畫凍結在第 2.5 秒，方便截圖驗收
 
@@ -76,10 +78,12 @@ python app.py
 | 路徑 | 內容 |
 |---|---|
 | `video/index.html` | HyperFrames 根 composition（28 秒） |
-| `video/compositions/story.html` | 動畫主程式；`/*SPRITES*/` 區塊由 `export_pieces.py` 自動產生，不要手改 |
+| `video/compositions/story.html` | 第一集動畫主程式；`/*SPRITES*/` 區塊由 `export_pieces.py` 自動產生，不要手改 |
+| `video/compositions/ep2.html` | 第二集動畫主程式（同上） |
 | `video/SPEC.md` | 影片規格：配色、動作、分鏡、禁用元素 |
 | `video/design/cat_sprites.py` | 角色點陣原稿，輸出 `character_sheet_v7.png` |
-| `video/design/export_pieces.py` | 紙娃娃零件產生器，注入 `story.html` 並輸出 `pieces_preview.png` |
+| `video/design/export_pieces.py` | 紙娃娃零件產生器，注入各集 composition、寫出 `static/sprites.js`，並輸出 `pieces_preview.png` |
+| `video/design/animals.py` | 第二集的動物（狐獴、水獺、長頸鹿、大象）、茶葉蛋、名牌、問號零件 |
 | `video/design/encode.py` | 影格轉 mp4（OpenCV，沒有 FFmpeg 時用） |
 | `video/design/cat_smooth.py`、`compare_pixel_vs_smooth_v1.png` | 一般動畫版對照（未採用） |
 | `video/design/reference/` | 原始參考照片 |
@@ -90,10 +94,8 @@ python app.py
 改角色零件的流程：
 
 ```bash
-python -X utf8 video/design/export_pieces.py   # 重新產生零件並注入 video/compositions/story.html
-python tools/build_trailer.py                  # 重新產生 static/trailer.js
+python -X utf8 video/design/export_pieces.py   # 重新產生零件，注入各集 composition 並寫出 static/sprites.js
+python tools/build_trailer.py                  # 重新產生各集預告片（static/trailer.js、ep2.js）
 ```
-
-`static/sprites.js` 目前由 `story.html` 的 `SPRITES` / `PAL` 手動複製，零件改了要一起更新。
 
 各版 mp4 成品（v3～v5，mp4v 編碼）與輸出用的影格暫存檔沒有進版控，仍留在 `D:\xmas-party-invite\renders\`。

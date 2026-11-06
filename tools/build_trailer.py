@@ -18,6 +18,7 @@ STATIC = ROOT / "static"
 # 集數清單：(集數, 標題, composition 檔名, 輸出 js 檔名)；新的一集加在這裡，並在 index.html 掛上輸出的 js
 EPISODES = [
     (1, "第一集", "story.html", "trailer.js"),
+    (2, "第二集", "ep2.html", "ep2.js"),
 ]
 
 

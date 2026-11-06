@@ -1,4 +1,5 @@
-"""把像素小貓拆成紙娃娃零件，輸出 JSON 並注入 compositions/story.html 的 SPRITES 區塊。
+"""把像素小貓（與第二集的動物）拆成紙娃娃零件，輸出 JSON 並注入各集 composition 的 SPRITES 區塊，
+同時寫出遊戲頁面用的 static/sprites.js。
 
 座標系：所有零件都放在 44x34 的「角色框」裡；x0/y0 是零件左上角在角色框中的位置，
 pivot 是關節點（同一個座標系）。影片程式依 pivot 旋轉、平移各零件。
@@ -10,6 +11,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
+import animals  # noqa: E402
 import cat_sprites as cs  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -33,6 +35,14 @@ PAL.update({
     "Y": (245, 228, 214),   # 招牌背面紋路
     "V": (191, 221, 245),   # 寶寶藍
 })
+PAL.update(animals.PAL)
+
+# 零件注入的 composition（每一集一個檔），以及遊戲頁面共用的零件檔
+COMPOSITIONS = ["story.html", "ep2.html"]
+SPRITES_JS = Path(__file__).resolve().parent.parent.parent / "static" / "sprites.js"
+# 第二集公布名字的字卡：(零件名, 動物, 英文名)
+NAME_CARDS = [("cap_ethan", "狐獴", "Ethan"), ("cap_ann", "水獺", "Ann"),
+              ("cap_charlotte", "長頸鹿", "Charlotte"), ("cap_allen", "大象", "Allen")]
 
 BOW = ["dd...dd", "drd.drd", "drrdrrd", "drd.drd", "dd...dd"]
 ENVELOPE = ["mmmmmmmm", "mcmccmcm", "mccmmccm", "mccTTccm", "mmmmmmmm"]
@@ -409,22 +419,31 @@ def main():
                                      base="X", grain="Y", frame="Q")
     pieces["sign_back"]["unit"] = 0.5
     pieces["letter"] = letter_card()
+    pieces.update(animals.pieces())
+    for key, animal, name in NAME_CARDS:
+        pieces[key] = sign_board([(animal, 15, 12, "T"), (name, 22, 30, "U")], base="X", grain="Y", frame="Q")
+        pieces[key]["unit"] = 0.5
 
     pal = {k: "#%02X%02X%02X" % v for k, v in PAL.items()}
-    payload = "const SPRITES = " + json.dumps(pieces, ensure_ascii=False) + ";\n      const PAL = " + \
-        json.dumps(pal) + ";"
-    story = Path(__file__).parent.parent / "compositions" / "story.html"
-    s = story.read_text(encoding="utf-8")
-    a = s.index("/*SPRITES*/")
-    b = s.index("/*END SPRITES*/")
-    s = s[:a] + "/*SPRITES*/\n      " + payload + "\n      " + s[b:]
-    story.write_text(s, encoding="utf-8")
+    sprites = json.dumps(pieces, ensure_ascii=False)
+    payload = "const SPRITES = " + sprites + ";\n      const PAL = " + json.dumps(pal) + ";"
+    for name in COMPOSITIONS:
+        comp = Path(__file__).parent.parent / "compositions" / name
+        s = comp.read_text(encoding="utf-8")
+        a = s.index("/*SPRITES*/")
+        b = s.index("/*END SPRITES*/")
+        s = s[:a] + "/*SPRITES*/\n      " + payload + "\n      " + s[b:]
+        comp.write_text(s, encoding="utf-8", newline="\n")
+    SPRITES_JS.write_text(
+        "// 角色零件資料：由 video/design/export_pieces.py 產生，請勿手改\n"
+        "const SPRITES = " + sprites + ";\nconst PAL = " + json.dumps(pal) + ";\n",
+        encoding="utf-8", newline="\n")
 
     # 預覽：所有零件排成一張圖
     px = 8
     names = list(pieces)
     cols = 8
-    cell = 50 * px
+    cell = 62 * px
     sheet = Image.new("RGB", (cols * cell, ((len(names) + cols - 1) // cols) * cell), (91, 58, 42))
     for i, n in enumerate(names):
         p = pieces[n]
@@ -438,7 +457,7 @@ def main():
                                 fill=PAL[ch])
         d.text((ox, oy + cell - 40), n, fill=(255, 244, 214))
     sheet.save(Path(__file__).with_name("pieces_preview.png"))
-    print("pieces:", len(pieces), "->", story)
+    print("pieces:", len(pieces), "->", ", ".join(COMPOSITIONS), "+", SPRITES_JS.name)
 
 
 if __name__ == "__main__":
