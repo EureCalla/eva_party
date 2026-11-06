@@ -81,8 +81,10 @@ class GameDB:
         print(f"[models] seeded {len(roster)} players")
 
     def roster_names(self) -> list[str]:
-        """Return all player names in roster order, for the login drop-down."""
-        rows = self.conn.execute("SELECT en_name FROM players WHERE is_deleted = 0 ORDER BY id").fetchall()
+        """Return all player names in alphabetical order, for the login drop-down."""
+        rows = self.conn.execute(
+            "SELECT en_name FROM players WHERE is_deleted = 0 ORDER BY en_name COLLATE NOCASE"
+        ).fetchall()
         return [r["en_name"] for r in rows]
 
     def login(self, en_name: str, password: str) -> str | None:

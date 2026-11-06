@@ -63,7 +63,7 @@ class GameHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/login":
             token = self.db.login(str(data.get("name", "")), str(data.get("password", "")))
             if token is None:
-                self.send_json({"error": "名字或密碼不對"}, 401)
+                self.send_json({"error": "名字或暗號不對"}, 401)
             else:
                 self.send_json({"token": token})
         elif self.path == "/api/guess":

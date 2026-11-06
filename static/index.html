@@ -26,8 +26,8 @@
           <option value="" disabled selected>選擇你的名字</option>
         </select>
       </label>
-      <label>密碼
-        <input id="login-password" type="password" autocomplete="current-password" required>
+      <label>暗號
+        <input id="login-password" type="password" autocomplete="off" required>
       </label>
       <p id="login-error" class="error" hidden></p>
       <button type="submit" class="pixel-btn">登入</button>
@@ -43,6 +43,40 @@
     <div id="gifts"></div>
   </section>
 
+  <!-- 右上角：預告片、邀請函規則 -->
+  <div id="top-btns" hidden>
+    <button id="trailer-btn" type="button" class="pixel-btn small">預告片</button>
+    <button id="rules-btn" type="button" class="pixel-btn small">邀請函</button>
+  </div>
+  <!-- 預告片：與邀請影片同一份像素動畫，在瀏覽器即時播放 -->
+  <div id="trailer" class="overlay" hidden>
+    <div class="rules-box">
+      <canvas id="trailer-canvas" width="1920" height="1080"></canvas>
+      <div class="player-bar">
+        <button id="trailer-play" type="button" class="pixel-btn small">暫停</button>
+        <input id="trailer-seek" type="range" min="0" max="28" step="0.05" value="0" aria-label="播放進度">
+        <span id="trailer-time">0:00</span>
+      </div>
+      <button id="trailer-close" type="button" class="pixel-btn">關閉</button>
+    </div>
+  </div>
+  <div id="rules" class="overlay" hidden>
+    <div class="rules-box">
+      <canvas id="rules-letter" width="900" height="594"></canvas>
+      <dl class="party-info">
+        <div class="info-row">
+          <dt>時間</dt>
+          <dd><strong>2026/11/27（五）上午 10:00</strong> 開始<br>中午一起吃飯</dd>
+        </div>
+        <div class="info-row">
+          <dt>預算</dt>
+          <dd><strong>NT$300 ～ NT$600</strong>，歡迎誠意加碼<br><span class="warn">嚴禁低於 NT$300</span></dd>
+        </div>
+      </dl>
+      <button id="rules-close" type="button" class="pixel-btn">關閉</button>
+    </div>
+  </div>
+
   <!-- 猜對後選禮物標籤（點自己的禮物可重選） -->
   <div id="label-picker" class="overlay" hidden>
     <div class="card">
@@ -54,6 +88,7 @@
   </div>
 
   <script src="sprites.js"></script>
+  <script src="trailer.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

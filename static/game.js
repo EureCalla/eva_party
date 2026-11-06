@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const TOKEN_KEY = "xmas_party_token";
+  const TOKEN_KEY = "xmas_party_token"; // 舊版存登入用的 key，只用來清除
   const POLL_MS = 3000;
 
   // ---------- 正方形禮物與小腳（同影片色票：o 描邊、c 包裝紙、T 緞帶、Q 蝴蝶結、U 藍點、s 陰影、w 白腳） ----------
@@ -236,6 +236,12 @@
   };
   function show(name) {
     Object.keys(screens).forEach((k) => (screens[k].hidden = k !== name));
+    document.getElementById("top-btns").hidden = name === "intro";
+    if (name === "login") {
+      // 公用電腦：不留上一個人的名字與密碼
+      document.getElementById("login-card").reset();
+      document.getElementById("login-error").hidden = true;
+    }
     document.body.classList.toggle("scene-cover", name === "login");
     if (name === "wall") {
       sceneMode = "off";
@@ -249,20 +255,18 @@
   }
 
   // ---------- API ----------
+  // 登入狀態只放記憶體、不寫進瀏覽器：有人用公用電腦，重新整理就要重新登入
+  let sessionToken = null;
+  try {
+    localStorage.removeItem(TOKEN_KEY); // 清掉舊版記住的登入
+  } catch (e) {
+    /* 拿不到 storage 就算了 */
+  }
   function token() {
-    try {
-      return localStorage.getItem(TOKEN_KEY);
-    } catch (e) {
-      return null;
-    }
+    return sessionToken;
   }
   function saveToken(v) {
-    try {
-      if (v) localStorage.setItem(TOKEN_KEY, v);
-      else localStorage.removeItem(TOKEN_KEY);
-    } catch (e) {
-      /* 私密模式拿不到 storage 就每次重登 */
-    }
+    sessionToken = v || null;
   }
   async function api(path, body) {
     const headers = { "Content-Type": "application/json" };
@@ -285,14 +289,7 @@
     if (e.target === enterBtn) return;
     if (enterBtn.hidden && introStart !== null) introStart -= INTRO_END * 1000;
   });
-  enterBtn.addEventListener("click", async () => {
-    if (token()) {
-      const r = await api("/api/state");
-      if (r.ok && r.data.me) return enterWall(r.data);
-      saveToken(null);
-    }
-    show("login");
-  });
+  enterBtn.addEventListener("click", () => show("login"));
 
   // ---------- 2. 登入 ----------
   const loginCard = document.getElementById("login-card");
@@ -498,6 +495,76 @@
     if (s.ok) applyState(s.data);
   }
   document.getElementById("label-cancel").addEventListener("click", closePicker);
+
+  // ---------- 再看一次邀請函（用影片的 letter 零件，原尺寸 300x198 放大 3 倍） ----------
+  const rulesEl = document.getElementById("rules");
+  function openRules() {
+    const c = document.getElementById("rules-letter");
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(SPR.letter.c, 0, 0, c.width, c.height);
+    rulesEl.hidden = false;
+  }
+  document.getElementById("rules-btn").addEventListener("click", openRules);
+  document.getElementById("rules-close").addEventListener("click", () => (rulesEl.hidden = true));
+  rulesEl.addEventListener("click", (e) => {
+    if (e.target === rulesEl) rulesEl.hidden = true;
+  });
+
+  // ---------- 預告片（trailer.js 的 render(t) 逐格畫在 canvas 上） ----------
+  const trailerEl = document.getElementById("trailer");
+  const playBtn = document.getElementById("trailer-play");
+  const seekEl = document.getElementById("trailer-seek");
+  const timeEl = document.getElementById("trailer-time");
+  const DUR = window.TRAILER.duration;
+  let trailerT = 0;
+  let playing = false;
+  let lastMs = null;
+
+  function showTrailerFrame() {
+    window.TRAILER.render(trailerT);
+    seekEl.value = trailerT;
+    const s = Math.floor(trailerT);
+    timeEl.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+  function setPlaying(v) {
+    playing = v;
+    playBtn.textContent = v ? "暫停" : trailerT >= DUR ? "重播" : "播放";
+    lastMs = null;
+    if (v) requestAnimationFrame(trailerFrame);
+  }
+  function trailerFrame(ms) {
+    if (!playing || trailerEl.hidden) return;
+    if (lastMs !== null) trailerT = Math.min(DUR, trailerT + (ms - lastMs) / 1000);
+    lastMs = ms;
+    showTrailerFrame();
+    if (trailerT >= DUR) return setPlaying(false);
+    requestAnimationFrame(trailerFrame);
+  }
+  function closeTrailer() {
+    setPlaying(false);
+    trailerEl.hidden = true;
+  }
+  document.getElementById("trailer-btn").addEventListener("click", () => {
+    trailerT = 0;
+    trailerEl.hidden = false;
+    showTrailerFrame();
+    setPlaying(true);
+  });
+  playBtn.addEventListener("click", () => {
+    if (!playing && trailerT >= DUR) trailerT = 0;
+    setPlaying(!playing);
+  });
+  seekEl.max = DUR;
+  seekEl.addEventListener("input", () => {
+    trailerT = Number(seekEl.value);
+    showTrailerFrame();
+    if (!playing) playBtn.textContent = "播放";
+  });
+  document.getElementById("trailer-close").addEventListener("click", closeTrailer);
+  trailerEl.addEventListener("click", (e) => {
+    if (e.target === trailerEl) closeTrailer();
+  });
 
   // ---------- 開場 ----------
   loadRoster();
