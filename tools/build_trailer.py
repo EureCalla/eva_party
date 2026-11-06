@@ -1,8 +1,9 @@
-"""Build static/trailer.js from the invitation video's HyperFrames composition.
+"""Build the trailer episodes (static/trailer.js, ...) from the video's HyperFrames compositions.
 
 The trailer is the same pixel animation as the invitation video, played live in
 the browser instead of as an mp4 (the exported mp4 is mp4v, which browsers
-cannot decode). Re-run this whenever the video's story.html changes:
+cannot decode). Each composition becomes one episode; re-run this whenever a
+composition changes:
 
     python tools/build_trailer.py
 """
@@ -11,17 +12,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-STORY_HTML = ROOT / "video" / "compositions" / "story.html"
-OUT_JS = ROOT / "static" / "trailer.js"
+COMPOSITIONS = ROOT / "video" / "compositions"
+STATIC = ROOT / "static"
 
-HEADER = (
-    "// 預告片：由 tools/build_trailer.py 從 video/compositions/story.html 產生，請勿手改\n"
-    "// 角色零件沿用 sprites.js 的 SPRITES / PAL；對外提供 window.TRAILER = { render(t), duration }\n"
-)
+# 集數清單：(集數, 標題, composition 檔名, 輸出 js 檔名)；新的一集加在這裡，並在 index.html 掛上輸出的 js
+EPISODES = [
+    (1, "第一集", "story.html", "trailer.js"),
+]
 
 
-def build(src: Path, dst: Path) -> None:
-    """Extract the composition script, rewire its canvas and timeline, and write it out."""
+def build(no: int, title: str, src: Path, dst: Path) -> None:
+    """Extract the composition script, rewire its canvas and timeline, and register it as an episode."""
     html = src.read_text(encoding="utf-8")
     body = html[html.index("<script>") + len("<script>") : html.rindex("</script>")]
 
@@ -32,17 +33,25 @@ def build(src: Path, dst: Path) -> None:
 
     old_canvas = 'document.getElementById("story-canvas")'
     if old_canvas not in body:
-        raise SystemExit("story.html 找不到 story-canvas，格式可能變了")
+        raise SystemExit(f"{src.name} 找不到 story-canvas，格式可能變了")
     body = body.replace(old_canvas, 'document.getElementById("trailer-canvas")')
 
-    # GSAP 時間軸換成直接對外提供 render
+    # GSAP 時間軸換成直接登記到 window.EPISODES
     cut = body.index("const state = { t: 0 };")
-    body = body[:cut] + "render(0);\n      window.TRAILER = { render, duration: DUR };\n    })();\n"
+    body = body[:cut] + (
+        f"(window.EPISODES = window.EPISODES || []).push({{ no: {no}, title: {title!r}, render, duration: DUR }});\n"
+        "    })();\n"
+    )
 
-    dst.write_text(HEADER + body.strip() + "\n", encoding="utf-8", newline="\n")
+    header = (
+        f"// 預告片{title}：由 tools/build_trailer.py 從 video/compositions/{src.name} 產生，請勿手改\n"
+        "// 角色零件沿用 sprites.js 的 SPRITES / PAL；登記到 window.EPISODES = [{ no, title, render(t), duration }]\n"
+    )
+    dst.write_text(header + body.strip() + "\n", encoding="utf-8", newline="\n")
     print(f"[build_trailer] {src} -> {dst} ({dst.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    build(STORY_HTML, OUT_JS)
+    for no, title, src, dst in EPISODES:
+        build(no, title, COMPOSITIONS / src, STATIC / dst)

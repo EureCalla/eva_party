@@ -198,6 +198,15 @@ body.scene-cover #scene { object-fit: cover; }
 }
 .player-bar .pixel-btn { min-width: 4.5em; }
 #trailer-seek { flex: 1; accent-color: var(--pink); }
+/* 集數按鈕：正在播的那集粉紅，其餘奶油白 */
+#episode-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+.episode-btn { background: var(--cream); color: var(--deep); }
+.episode-btn.current { background: var(--pink); color: var(--cream); }
 /* 窄螢幕招牌會撞到右上角按鈕，往下讓位 */
 @media (max-width: 760px) {
   #wall { padding-top: 56px; }

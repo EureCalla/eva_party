@@ -44,6 +44,7 @@ python app.py
 
 登入頁與禮物牆右上角有「預告片」與「邀請函」按鈕：
 - 預告片：與邀請影片同一份像素動畫，在瀏覽器即時播放（`static/trailer.js`），可暫停、拖動進度、重播
+  - 播放列下方是集數按鈕，像影集一樣可以切換；只列已經做好的集數，目前只有第一集
 - 邀請函：邀請函規則，加上派對時間與預算
 
 ## 資料
@@ -61,6 +62,10 @@ python app.py
 
 - 預告片改了（`video/compositions/story.html`）要重新產生：`python tools/build_trailer.py`
   - 不用 mp4 是因為匯出的影片是 mp4v 編碼，瀏覽器與手機都播不了
+- 新增一集（以第二集為例）：
+  1. 在 `video/compositions/` 放 `ep2.html`（同 `story.html` 的格式：canvas id 為 `story-canvas`、有 `/*SPRITES*/` 區塊與 `const state = { t: 0 };`）
+  2. `tools/build_trailer.py` 的 `EPISODES` 加一筆 `(2, "第二集", "ep2.html", "ep2.js")`，執行 `python tools/build_trailer.py`
+  3. `static/index.html` 在 `trailer.js` 後面加 `<script src="ep2.js"></script>`，集數按鈕就會自動出現
 
 - `http://localhost:8477/?t=2.5`：把邀請函動畫凍結在第 2.5 秒，方便截圖驗收
 
