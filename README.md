@@ -3,7 +3,7 @@
 好孕敲門・交換禮物 Party 的猜禮物遊戲（孕婦歡送 Party）。
 
 - UI：HTML 前端（HTML / CSS / JavaScript），後端 Python 標準庫 + SQLite，不需安裝套件
-- 角色與色票沿用邀請影片（`D:\xmas-party-invite`），`static/sprites.js` 由影片的 `compositions/story.html` 原樣抽出
+- 角色與色票沿用邀請影片（原始檔在 `video/`），`static/sprites.js` 由 `video/compositions/story.html` 原樣抽出
 
 ## 啟動
 
@@ -59,7 +59,36 @@ python app.py
 
 ## 開發
 
-- 預告片改了（`D:\xmas-party-invite\compositions\story.html`）要重新產生：`python tools/build_trailer.py`
+- 預告片改了（`video/compositions/story.html`）要重新產生：`python tools/build_trailer.py`
   - 不用 mp4 是因為匯出的影片是 mp4v 編碼，瀏覽器與手機都播不了
 
 - `http://localhost:8477/?t=2.5`：把邀請函動畫凍結在第 2.5 秒，方便截圖驗收
+
+## 素材
+
+邀請影片原本是獨立的 HyperFrames 專案（`D:\xmas-party-invite`），現在改由遊戲頁面的預告片即時播放，原始檔整理進本 repo：
+
+| 路徑 | 內容 |
+|---|---|
+| `video/index.html` | HyperFrames 根 composition（28 秒） |
+| `video/compositions/story.html` | 動畫主程式；`/*SPRITES*/` 區塊由 `export_pieces.py` 自動產生，不要手改 |
+| `video/SPEC.md` | 影片規格：配色、動作、分鏡、禁用元素 |
+| `video/design/cat_sprites.py` | 角色點陣原稿，輸出 `character_sheet_v7.png` |
+| `video/design/export_pieces.py` | 紙娃娃零件產生器，注入 `story.html` 並輸出 `pieces_preview.png` |
+| `video/design/encode.py` | 影格轉 mp4（OpenCV，沒有 FFmpeg 時用） |
+| `video/design/cat_smooth.py`、`compare_pixel_vs_smooth_v1.png` | 一般動畫版對照（未採用） |
+| `video/design/reference/` | 原始參考照片 |
+| `video/design/archive/` | v1 毛茸茸版程式（封存） |
+| `video/assets/sfx/` | 備用音效（pop、whoosh、sparkle），目前未使用 |
+| `assets/animals/` | 參加者的動物圖與名單 Excel（遊戲以 Excel 為準，圖目前未使用） |
+
+改角色零件的流程：
+
+```bash
+python -X utf8 video/design/export_pieces.py   # 重新產生零件並注入 video/compositions/story.html
+python tools/build_trailer.py                  # 重新產生 static/trailer.js
+```
+
+`static/sprites.js` 目前由 `story.html` 的 `SPRITES` / `PAL` 手動複製，零件改了要一起更新。
+
+各版 mp4 成品（v3～v5，mp4v 編碼）與輸出用的影格暫存檔沒有進版控，仍留在 `D:\xmas-party-invite\renders\`。

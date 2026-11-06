@@ -1,4 +1,4 @@
-// 預告片：由 tools/build_trailer.py 從 D:/xmas-party-invite/compositions/story.html 產生，請勿手改
+// 預告片：由 tools/build_trailer.py 從 video/compositions/story.html 產生，請勿手改
 // 角色零件沿用 sprites.js 的 SPRITES / PAL；對外提供 window.TRAILER = { render(t), duration }
 (function () {
       // 角色零件由 design/export_pieces.py 產生並注入，請勿手改這個區塊

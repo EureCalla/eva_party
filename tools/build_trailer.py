@@ -10,11 +10,12 @@ cannot decode). Re-run this whenever the video's story.html changes:
 import sys
 from pathlib import Path
 
-STORY_HTML = Path(r"D:\xmas-party-invite\compositions\story.html")
-OUT_JS = Path(__file__).resolve().parent.parent / "static" / "trailer.js"
+ROOT = Path(__file__).resolve().parent.parent
+STORY_HTML = ROOT / "video" / "compositions" / "story.html"
+OUT_JS = ROOT / "static" / "trailer.js"
 
 HEADER = (
-    "// 預告片：由 tools/build_trailer.py 從 D:/xmas-party-invite/compositions/story.html 產生，請勿手改\n"
+    "// 預告片：由 tools/build_trailer.py 從 video/compositions/story.html 產生，請勿手改\n"
     "// 角色零件沿用 sprites.js 的 SPRITES / PAL；對外提供 window.TRAILER = { render(t), duration }\n"
 )
 
