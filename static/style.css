@@ -250,6 +250,126 @@ body.scene-cover #scene { object-fit: cover; }
 .info-row strong { color: var(--blue); }
 .info-row .warn { color: var(--pink); }
 
+/* ---------- 活動進度條：節點以線串起，硬邊像素風 ---------- */
+#stage-bar {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0;
+  list-style: none;
+  margin: 10px auto 2px;
+  padding: 0;
+  max-width: 640px;
+}
+#stage-bar li {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--cream-line);
+  font-size: clamp(0.66rem, 2.8vw, 0.95rem);
+  text-align: center;
+  opacity: 0.75;
+}
+/* 節點之間的連線 */
+#stage-bar li + li::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 50%;
+  width: 100%;
+  height: 4px;
+  background: var(--outline);
+  z-index: 0;
+}
+#stage-bar li.done + li::before,
+#stage-bar li.current + li.current::before { background: var(--pink); }
+#stage-bar .dot {
+  position: relative;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  background: var(--wall);
+  border: 3px solid var(--cream-line);
+}
+#stage-bar li.done { opacity: 1; }
+#stage-bar li.done .dot { background: var(--pink); border-color: var(--outline); }
+#stage-bar li.current { opacity: 1; color: var(--cream); }
+#stage-bar li.current .dot {
+  width: 18px;
+  height: 18px;
+  margin-top: -2px;
+  background: var(--dress);
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px var(--outline);
+}
+#stage-bar li.current .name {
+  padding: 1px 6px;
+  color: var(--cream);
+  background: var(--pink);
+  border: 2px solid var(--outline);
+}
+#wall.locked .gift { cursor: default; }
+
+/* ---------- 管理頁 ---------- */
+.pixel-btn.admin { background: var(--blue); }
+#admin { align-items: flex-start; overflow-y: auto; }
+.admin-card { width: min(640px, 100%); margin: auto 0; }
+.admin-sec { display: flex; flex-direction: column; gap: 10px; }
+.admin-sec h3 {
+  margin: 0;
+  padding-bottom: 4px;
+  font-size: 1.05rem;
+  color: var(--pink);
+  border-bottom: 3px dashed var(--dress);
+}
+.admin-sec > .pixel-btn { align-self: flex-end; }
+#stage-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#stage-options label {
+  display: flex;
+  flex-direction: row; /* 蓋掉 .card label 的直式排列 */
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 3px solid var(--outline);
+  cursor: pointer;
+}
+#stage-options label.now { background: var(--dress); }
+#stage-options input { accent-color: var(--pink); }
+#people-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+.people-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto auto;
+  gap: 6px;
+  align-items: center;
+}
+.people-row input:not([type="checkbox"]) {
+  font: inherit;
+  font-size: 0.9rem;
+  min-width: 0;
+  padding: 5px 6px;
+  color: var(--outline);
+  background: #fff;
+  border: 2px solid var(--outline);
+  border-radius: 0;
+}
+.people-row .chk { display: flex; flex-direction: row; align-items: center; gap: 3px; font-size: 0.8rem; white-space: nowrap; }
+.people-row .meta { grid-column: 1 / -1; margin-top: -4px; font-size: 0.75rem; color: var(--blue); }
+.people-row .pixel-btn { font-size: 0.8rem; padding: 0.3em 0.6em; box-shadow: 2px 2px 0 var(--deep); }
+.people-row .del { background: var(--outline); }
+.add-row { padding-top: 8px; border-top: 3px dashed var(--dress); grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto; }
+.admin-note { margin: 0; font-size: 0.75rem; color: var(--outline); opacity: 0.8; }
+#admin-msg.ok { color: var(--blue); }
+
 /* ---------- 標籤選單 ---------- */
 .overlay {
   position: fixed;

@@ -38,6 +38,7 @@
   <section id="wall" class="screen" hidden>
     <header class="wall-head">
       <canvas id="wall-sign" width="400" height="176"></canvas>
+      <ol id="stage-bar" aria-label="活動進度"></ol>
       <p id="wall-hint">猜猜哪個是你的禮物？</p>
     </header>
     <div id="gifts"></div>
@@ -45,8 +46,34 @@
 
   <!-- 右上角：預告片、邀請函規則 -->
   <div id="top-btns" hidden>
+    <button id="admin-btn" type="button" class="pixel-btn small admin" hidden>管理</button>
     <button id="trailer-btn" type="button" class="pixel-btn small">預告片</button>
     <button id="rules-btn" type="button" class="pixel-btn small">邀請函</button>
+  </div>
+
+  <!-- 管理頁：只有管理者看得到；所有動作都由 server 再檢查一次權限 -->
+  <div id="admin" class="overlay" hidden>
+    <div class="card admin-card">
+      <h2 class="card-title picker-title">管理</h2>
+      <section class="admin-sec">
+        <h3>活動階段</h3>
+        <div id="stage-options"></div>
+        <button id="stage-submit" type="button" class="pixel-btn small">送出</button>
+      </section>
+      <section class="admin-sec">
+        <h3>人員管理</h3>
+        <div id="people-list"></div>
+        <form id="people-add" class="people-row add-row">
+          <input name="en_name" placeholder="英文名字" required>
+          <input name="animal" placeholder="動物" required>
+          <label class="chk"><input name="admin" type="checkbox">管理者</label>
+          <button type="submit" class="pixel-btn small">新增</button>
+        </form>
+        <p class="admin-note">新增的人暗號預設 eva；刪除會釋放他認領的禮物</p>
+      </section>
+      <p id="admin-msg" class="error" hidden></p>
+      <button id="admin-close" type="button" class="link-btn">關閉</button>
+    </div>
   </div>
   <!-- 預告片：與邀請影片同一份像素動畫，在瀏覽器即時播放 -->
   <div id="trailer" class="overlay" hidden>

@@ -237,10 +237,12 @@
   function show(name) {
     Object.keys(screens).forEach((k) => (screens[k].hidden = k !== name));
     document.getElementById("top-btns").hidden = name === "intro";
+    if (name !== "wall") document.getElementById("admin-btn").hidden = true;
     if (name === "login") {
       // 公用電腦：不留上一個人的名字與密碼
       document.getElementById("login-card").reset();
       document.getElementById("login-error").hidden = true;
+      loadRoster(); // 管理者可能剛增刪人員，名單每次重讀
     }
     document.body.classList.toggle("scene-cover", name === "login");
     if (name === "wall") {
@@ -299,6 +301,7 @@
 
   async function loadRoster() {
     const r = await api("/api/roster");
+    while (loginName.options.length > 1) loginName.remove(1); // 保留「選擇你的名字」
     r.data.names.forEach((n) => {
       const o = document.createElement("option");
       o.value = o.textContent = n;
@@ -333,6 +336,14 @@
   const tiles = new Map(); // gift_id -> { el, ctx, label, animal, claimed }
   let me = null;
   let pollTimer = null;
+  let stage = "seating";
+  let stages = [];
+  let wallSig = ""; // 禮物牆組成（id＋動物），人員異動時重建
+  const STAGE_HINT = {
+    reveal: "標籤公布！看看大家的禮物",
+    exchange: "交換禮物遊戲進行中",
+    feast: "一起享用大餐吧！",
+  };
 
   // pose：rest 平放、stand 站、squat 蹲；label 決定包裝紙顏色
   function drawGift(ctx, pose, label) {
@@ -385,9 +396,47 @@
     });
   }
 
+  // 活動進度條：已過、目前、未到
+  function renderStageBar() {
+    const bar = document.getElementById("stage-bar");
+    const cur = stages.findIndex((s) => s.key === stage);
+    bar.textContent = "";
+    stages.forEach((s, i) => {
+      const li = document.createElement("li");
+      li.className = i < cur ? "done" : i === cur ? "current" : "todo";
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = s.name;
+      li.append(dot, name);
+      bar.appendChild(li);
+    });
+  }
+
+  function updateHint() {
+    const seating = stage === "seating";
+    wallEl.classList.toggle("locked", !seating);
+    wallEl.classList.toggle("done", !seating || !!(me && me.gift_id));
+    if (!seating) hintEl.textContent = STAGE_HINT[stage] || "";
+    else if (me && me.gift_id) hintEl.textContent = "你是" + me.animal + "！點你的禮物可以換標籤";
+    else hintEl.textContent = "猜猜哪個是你的禮物？";
+  }
+
   function applyState(data) {
     if (data.labels) labels = data.labels;
+    if (data.stages) stages = data.stages;
+    if (data.stage) stage = data.stage;
+    // 登入的人被管理者刪掉了：回登入頁
+    if (token() && !data.me && !wallEl.hidden) return backToLogin();
     if (data.me) me = data.me;
+    const sig = data.gifts.map((g) => g.gift_id + ":" + g.animal).join(",");
+    if (sig !== wallSig) {
+      wallSig = sig;
+      buildWall(data.gifts);
+    }
+    renderStageBar();
+    document.getElementById("admin-btn").hidden = wallEl.hidden || !(me && me.is_admin);
     data.gifts.forEach((g) => {
       const tile = tiles.get(g.gift_id);
       if (!tile) return;
@@ -402,23 +451,22 @@
       tile.el.classList.toggle("mine", !!me && me.gift_id === g.gift_id);
       if (!g.claimed) drawGift(tile.ctx, "rest", g.label);
     });
-    if (me && me.gift_id) {
-      wallEl.classList.add("done");
-      hintEl.textContent = "你是" + me.animal + "！點你的禮物可以換標籤";
-    }
+    updateHint();
+  }
+
+  async function refreshState() {
+    const r = await api("/api/state");
+    if (r.ok) applyState(r.data);
   }
 
   function enterWall(data) {
     show("wall");
     drawSign();
-    buildWall(data.gifts);
+    wallSig = "";
     applyState(data);
-    if (me && me.gift_id && !me.label) openPicker();
+    if (stage === "seating" && me && me.gift_id && !me.label) openPicker();
     if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
-      const r = await api("/api/state");
-      if (r.ok) applyState(r.data);
-    }, POLL_MS);
+    pollTimer = setInterval(refreshState, POLL_MS);
     requestAnimationFrame(legsFrame);
   }
 
@@ -448,22 +496,25 @@
 
   function backToLogin() {
     saveToken(null);
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    me = null;
     closePicker();
+    document.getElementById("admin").hidden = true;
     show("login");
   }
 
   async function onGiftClick(giftId) {
     const tile = tiles.get(giftId);
-    if (!tile) return;
+    if (!tile || stage !== "seating") return; // 對號入座之後禮物牆只能看
     if (me && me.gift_id === giftId) return openPicker();
     if (tile.claimed || (me && me.gift_id)) return;
     const r = await api("/api/guess", { gift_id: giftId });
     if (r.status === 401) return backToLogin();
     const result = r.data.result;
     if (result === "wrong") nope(tile);
-    const s = await api("/api/state");
-    if (s.ok) applyState(s.data);
-    if (result === "correct") openPicker();
+    await refreshState();
+    if (result === "correct" && stage === "seating") openPicker();
   }
 
   // ---------- 標籤選單 ----------
@@ -490,11 +541,132 @@
   async function chooseLabel(lb) {
     const r = await api("/api/label", { label: lb });
     if (r.status === 401) return backToLogin();
-    closePicker();
-    const s = await api("/api/state");
-    if (s.ok) applyState(s.data);
+    closePicker(); // 409 locked（階段剛被切走）也一樣關掉，狀態以 server 為準
+    await refreshState();
   }
   document.getElementById("label-cancel").addEventListener("click", closePicker);
+
+  // ---------- 管理頁：切換活動階段、新增／修改／刪除人員（server 端會再檢查管理者權限） ----------
+  const adminEl = document.getElementById("admin");
+  const adminMsg = document.getElementById("admin-msg");
+  const stageOptsEl = document.getElementById("stage-options");
+  const peopleEl = document.getElementById("people-list");
+  const addForm = document.getElementById("people-add");
+
+  function adminNotice(text, ok) {
+    adminMsg.textContent = text || "";
+    adminMsg.hidden = !text;
+    adminMsg.classList.toggle("ok", !!ok);
+  }
+
+  function renderStageOptions() {
+    stageOptsEl.textContent = "";
+    stages.forEach((s, i) => {
+      const lb = document.createElement("label");
+      lb.className = s.key === stage ? "now" : "";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "stage";
+      radio.value = s.key;
+      radio.checked = s.key === stage;
+      lb.append(radio, document.createTextNode(i + 1 + ". " + s.name + (s.key === stage ? "（目前）" : "")));
+      stageOptsEl.appendChild(lb);
+    });
+  }
+
+  function renderPeople(list) {
+    peopleEl.textContent = "";
+    list.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "people-row";
+      const name = document.createElement("input");
+      name.value = p.en_name;
+      name.setAttribute("aria-label", "英文名字");
+      const animal = document.createElement("input");
+      animal.value = p.animal;
+      animal.setAttribute("aria-label", "動物");
+      const chk = document.createElement("label");
+      chk.className = "chk";
+      const admin = document.createElement("input");
+      admin.type = "checkbox";
+      admin.checked = p.admin;
+      chk.append(admin, document.createTextNode("管理者"));
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "pixel-btn small";
+      save.textContent = "儲存";
+      save.addEventListener("click", () =>
+        peopleAction(
+          { action: "update", id: p.id, en_name: name.value, animal: animal.value, admin: admin.checked },
+          "已更新 " + name.value
+        )
+      );
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "pixel-btn small del";
+      del.textContent = "刪除";
+      del.addEventListener("click", () => {
+        const note = p.guessed ? "，他認領的禮物會被釋放" : "";
+        if (confirm("確定刪除 " + p.en_name + "（" + p.animal + "）" + note + "？")) {
+          peopleAction({ action: "delete", id: p.id }, "已刪除 " + p.en_name);
+        }
+      });
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = p.guessed ? "已猜對" + (p.label ? "・標籤：" + p.label : "・還沒選標籤") : "還沒猜";
+      row.append(name, animal, chk, save, del, meta);
+      peopleEl.appendChild(row);
+    });
+  }
+
+  async function loadPeople() {
+    const r = await api("/api/admin/players");
+    if (r.status === 401) return backToLogin();
+    if (!r.ok) return adminNotice(r.data.error || "讀取人員失敗");
+    renderPeople(r.data.players);
+  }
+
+  async function peopleAction(body, okText) {
+    const r = await api("/api/admin/players", body);
+    if (!r.ok) {
+      adminNotice(r.data.error || "操作失敗");
+      return false;
+    }
+    renderPeople(r.data.players);
+    adminNotice(okText, true);
+    await refreshState();
+    return true;
+  }
+
+  async function openAdmin() {
+    adminNotice("");
+    renderStageOptions();
+    adminEl.hidden = false;
+    await loadPeople();
+  }
+
+  document.getElementById("admin-btn").addEventListener("click", openAdmin);
+  document.getElementById("admin-close").addEventListener("click", () => (adminEl.hidden = true));
+  document.getElementById("stage-submit").addEventListener("click", async () => {
+    const sel = stageOptsEl.querySelector("input:checked");
+    if (!sel) return;
+    const r = await api("/api/admin/stage", { stage: sel.value });
+    if (r.status === 403) return adminNotice("只有管理者可以切換階段");
+    if (!r.ok) return adminNotice("切換失敗");
+    await refreshState();
+    renderStageOptions();
+    const s = stages.find((x) => x.key === stage);
+    adminNotice("已切換到「" + (s ? s.name : stage) + "」", true);
+  });
+  addForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = addForm.elements;
+    const ok = await peopleAction(
+      { action: "add", en_name: f.en_name.value, animal: f.animal.value, admin: f.admin.checked },
+      "已新增 " + f.en_name.value
+    );
+    if (ok) addForm.reset();
+  });
 
   // ---------- 再看一次邀請函（用影片的 letter 零件，原尺寸 300x198 放大 3 倍） ----------
   const rulesEl = document.getElementById("rules");
@@ -567,7 +739,6 @@
   });
 
   // ---------- 開場 ----------
-  loadRoster();
   show("intro");
   requestAnimationFrame(sceneFrame);
 })();

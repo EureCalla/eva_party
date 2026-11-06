@@ -24,7 +24,21 @@ python app.py
 4. 猜對後幫禮物選一個標籤（寶、貝、珍珠、欣、Eva、Baby、欣加Pearl、媽媽、男、孩、威），
    禮物換成該標籤的顏色並顯示標籤；點自己的禮物可以改
    - 每個人只看得到自己禮物的標籤與顏色，別人的禮物只看得到有沒有長腳跳舞
-   - 要公開全部標籤：`mpivr20_cms.py` 的 `REVEAL_LABELS` 改 `True` 後重啟 server
+
+## 活動階段
+
+對號入座 → 公布標籤 → 交換禮物遊戲 → 共享盛宴。禮物牆招牌下方的進度條顯示目前到哪個節點。
+
+- 只有「對號入座」可以猜禮物、選／改標籤；之後的階段禮物牆只能看
+- 從「公布標籤」起，所有人看得到全部標籤與顏色
+- 目前階段存在 DB 的 `settings.stage`，階段定義在 `mpivr20_cms.STAGES`
+
+## 管理頁（管理者限定）
+
+管理者登入後禮物牆右上角有「管理」按鈕：
+- **活動階段**：選階段按送出，可任意切換（按錯可切回）
+- **人員管理**：新增（暗號預設 eva）、修改英文名／動物／管理者、刪除（軟刪除，會釋放他認領的禮物）
+- 不能刪除自己，也不能拿掉自己的管理者權限
 
 登入頁與禮物牆右上角有「預告片」與「邀請函」按鈕：
 - 預告片：與邀請影片同一份像素動畫，在瀏覽器即時播放（`static/trailer.js`），可暫停、拖動進度、重播
@@ -36,6 +50,7 @@ python app.py
 - 使用者只存在資料庫的 `players` 表（英文名、動物、暗號），登入選單與暗號檢查都直接讀 DB
   - 新增使用者：`python tools/add_player.py 名字 動物`（預設暗號 eva，可加 `--password`），排在禮物牆最後，不影響已認領的資料；server 不必重啟
   - 列出使用者：`python tools/add_player.py --list`
+  - 權限：`players.permission` 為 `user` 或 `admin`，新增時加 `--admin` 即為管理者；管理功能一律由 server 端以 `GameDB.is_admin()` 檢查
   - ⚠️ 刪掉 DB 會連使用者一起消失，要重建得逐一用 `add_player.py` 加回
 - 禮物標籤記在 `players.label`，標籤清單在 `mpivr20_cms.GIFT_LABELS`，顏色在 `static/game.js` 的 `LABEL_COLORS`
 - Schema 變更放 `migrations/`，啟動時自動套用

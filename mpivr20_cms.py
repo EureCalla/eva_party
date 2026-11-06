@@ -13,5 +13,12 @@ DEFAULT_PASSWORD: str = "eva"
 
 # 禮物標籤：邀請函規定禮物名稱需包含的字，每份禮物選一個
 GIFT_LABELS: list[str] = ["寶", "貝", "珍珠", "欣", "Eva", "Baby", "欣加Pearl", "媽媽", "男", "孩", "威"]
-# False：每個人只看得到自己禮物的標籤與顏色；改 True 並重啟 server 即公開全部標籤
-REVEAL_LABELS: bool = False
+# 活動階段（依序），目前階段存在 DB 的 settings.stage，由管理者在管理頁切換
+# 只有 seating 可以猜禮物、選標籤；seating 之後全員看得到所有標籤
+STAGES: list[tuple[str, str]] = [
+    ("seating", "對號入座"),
+    ("reveal", "公布標籤"),
+    ("exchange", "交換禮物遊戲"),
+    ("feast", "共享盛宴"),
+]
+STAGE_KEYS: list[str] = [k for k, _ in STAGES]

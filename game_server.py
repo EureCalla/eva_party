@@ -51,14 +51,48 @@ class GameHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/roster":
             self.send_json({"names": self.db.roster_names()})
         elif self.path == "/api/state":
-            data = self.db.state(self.headers.get("X-Token"), cms.REVEAL_LABELS)
+            data = self.db.state(self.headers.get("X-Token"))
             data["labels"] = cms.GIFT_LABELS
+            data["stages"] = [{"key": k, "name": n} for k, n in cms.STAGES]
             self.send_json(data)
+        elif self.path == "/api/admin/players":
+            if not self.db.is_admin(self.headers.get("X-Token")):
+                self.send_json({"error": "只有管理者可以使用"}, 403)
+                return
+            self.send_json({"players": self.db.admin_players()})
         else:
             super().do_GET()
 
+    def admin_players_action(self, data: dict[str, Any]) -> None:
+        """Add, update or delete a player from the admin page (admins only)."""
+        caller = self.db.player_by_token(self.headers.get("X-Token", ""))
+        if caller is None or caller["permission"] != "admin":
+            self.send_json({"error": "只有管理者可以使用"}, 403)
+            return
+        action = data.get("action")
+        permission = "admin" if data.get("admin") else "user"
+        try:
+            if action == "add":
+                self.db.add_player(str(data.get("en_name", "")), str(data.get("animal", "")),
+                                   cms.DEFAULT_PASSWORD, permission)
+            elif action in ("update", "delete"):
+                player_id = int(data.get("id"))
+                if player_id == caller["id"] and (action == "delete" or permission != "admin"):
+                    raise ValueError("不能刪除自己，也不能拿掉自己的管理者權限")
+                if action == "update":
+                    self.db.update_player(player_id, str(data.get("en_name", "")),
+                                          str(data.get("animal", "")), permission)
+                else:
+                    self.db.delete_player(player_id)
+            else:
+                raise ValueError("不認得的動作")
+        except (TypeError, ValueError) as e:
+            self.send_json({"error": str(e)}, 400)
+            return
+        self.send_json({"result": "ok", "players": self.db.admin_players()})
+
     def do_POST(self) -> None:
-        """Handle login and guesses."""
+        """Handle login, guesses, labels and admin actions."""
         data = self.read_json()
         if self.path == "/api/login":
             token = self.db.login(str(data.get("name", "")), str(data.get("password", "")))
@@ -73,11 +107,17 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "gift_id 格式不對"}, 400)
                 return
             result = self.db.guess(self.headers.get("X-Token", ""), gift_id)
-            self.send_json({"result": result}, 401 if result == "unknown" else 200)
+            self.send_json({"result": result}, {"unknown": 401, "locked": 409}.get(result, 200))
         elif self.path == "/api/label":
             result = self.db.set_label(self.headers.get("X-Token", ""), str(data.get("label", "")), cms.GIFT_LABELS)
-            status = {"ok": 200, "unknown": 401, "invalid": 400, "not_claimed": 409}[result]
+            status = {"ok": 200, "unknown": 401, "invalid": 400, "not_claimed": 409, "locked": 409}[result]
             self.send_json({"result": result}, status)
+        elif self.path == "/api/admin/stage":
+            result = self.db.set_stage(self.headers.get("X-Token", ""), str(data.get("stage", "")), cms.STAGE_KEYS)
+            status = {"ok": 200, "forbidden": 403, "invalid": 400}[result]
+            self.send_json({"result": result}, status)
+        elif self.path == "/api/admin/players":
+            self.admin_players_action(data)
         else:
             self.send_json({"error": "not found"}, 404)
 
