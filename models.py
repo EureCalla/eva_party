@@ -1,7 +1,5 @@
 """SQLite storage for players, sessions and gift claims."""
 
-import json
-import random
 import secrets
 import sqlite3
 import threading
@@ -62,23 +60,34 @@ class GameDB:
             m001_add_gift_label.apply(self.conn)
         print(f"[models] DB ready: {db_path}")
 
-    def seed(self, roster_path: Path, default_password: str) -> None:
-        """Insert the roster with a shuffled gift order, only when the table is empty."""
+    def player_count(self) -> int:
+        """Return how many active players exist."""
+        return self.conn.execute("SELECT COUNT(*) FROM players WHERE is_deleted = 0").fetchone()[0]
+
+    def add_player(self, en_name: str, animal: str, password: str) -> int:
+        """Add a player (and their gift) after the existing gifts; returns the new id.
+
+        Appending keeps the wall order and every claim already made untouched.
+        Raises ValueError when the name already exists.
+        """
         with self.lock:
-            count = self.conn.execute("SELECT COUNT(*) FROM players").fetchone()[0]
-            if count:
-                print(f"[models] seed skipped, {count} players already exist")
-                return
-            roster = json.loads(roster_path.read_text(encoding="utf-8"))
-            order = list(range(len(roster)))
-            random.shuffle(order)
-            now = utc_now()
-            self.conn.executemany(
+            if self.conn.execute("SELECT 1 FROM players WHERE en_name = ?", (en_name,)).fetchone():
+                raise ValueError(f"{en_name} 已經存在")
+            last = self.conn.execute("SELECT MAX(gift_order) FROM players").fetchone()[0]
+            cur = self.conn.execute(
                 "INSERT INTO players (en_name, animal, password, gift_order, created_at) VALUES (?, ?, ?, ?, ?)",
-                [(p["en_name"], p["animal"], default_password, order[i], now) for i, p in enumerate(roster)],
+                (en_name, animal, password, 0 if last is None else last + 1, utc_now()),
             )
             self.conn.commit()
-        print(f"[models] seeded {len(roster)} players")
+        print(f"[models] player added: {en_name} ({animal})")
+        return cur.lastrowid
+
+    def list_players(self) -> list[sqlite3.Row]:
+        """Return all active players in gift-wall order."""
+        return self.conn.execute(
+            "SELECT id, en_name, animal, gift_order, claimed_by, label FROM players "
+            "WHERE is_deleted = 0 ORDER BY gift_order"
+        ).fetchall()
 
     def roster_names(self) -> list[str]:
         """Return all player names in alphabetical order, for the login drop-down."""
@@ -112,17 +121,27 @@ class GameDB:
             (token,),
         ).fetchone()
 
-    def state(self, token: str | None) -> dict[str, Any]:
-        """Return the gift wall in display order, plus the caller's own claim if logged in."""
+    def state(self, token: str | None, reveal_labels: bool = False) -> dict[str, Any]:
+        """Return the gift wall in display order, plus the caller's own claim if logged in.
+
+        Unless ``reveal_labels`` is set, only the caller's own gift carries its
+        label; everyone still sees which gifts are claimed.
+        """
         rows = self.conn.execute(
             "SELECT id, animal, claimed_by, label FROM players WHERE is_deleted = 0 ORDER BY gift_order"
         ).fetchall()
+        player = self.player_by_token(token) if token else None
+        my_id = player["id"] if player is not None else None
         gifts = [
-            {"gift_id": r["id"], "animal": r["animal"], "claimed": r["claimed_by"] is not None, "label": r["label"]}
+            {
+                "gift_id": r["id"],
+                "animal": r["animal"],
+                "claimed": r["claimed_by"] is not None,
+                "label": r["label"] if reveal_labels or (my_id is not None and r["claimed_by"] == my_id) else None,
+            }
             for r in rows
         ]
         me: dict[str, Any] | None = None
-        player = self.player_by_token(token) if token else None
         if player is not None:
             mine = next((r for r in rows if r["claimed_by"] == player["id"]), None)
             me = {

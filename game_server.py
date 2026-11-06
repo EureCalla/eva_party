@@ -51,7 +51,7 @@ class GameHandler(SimpleHTTPRequestHandler):
         if self.path == "/api/roster":
             self.send_json({"names": self.db.roster_names()})
         elif self.path == "/api/state":
-            data = self.db.state(self.headers.get("X-Token"))
+            data = self.db.state(self.headers.get("X-Token"), cms.REVEAL_LABELS)
             data["labels"] = cms.GIFT_LABELS
             self.send_json(data)
         else:

@@ -20,12 +20,15 @@ def lan_ip() -> str:
 
 
 def main() -> None:
-    """Seed the roster on first run, then serve until Ctrl+C."""
+    """Open the database, then serve until Ctrl+C. Players live only in the DB."""
     sys.stdout.reconfigure(encoding="utf-8")
     info = Introduce()
     print(f"[app] {info.program} {info.version}")
     db = GameDB(cms.DB_PATH)
-    db.seed(cms.ROSTER_PATH, cms.DEFAULT_PASSWORD)
+    count = db.player_count()
+    print(f"[app] players in DB: {count}")
+    if count == 0:
+        print("[app] DB 裡沒有使用者，請先用 python tools/add_player.py 名字 動物 新增")
     server = GameServer(cms.HOST, cms.PORT, cms.STATIC_DIR, db)
     print(f"[app] 本機：http://localhost:{cms.PORT}")
     print(f"[app] 手機：http://{lan_ip()}:{cms.PORT}")
