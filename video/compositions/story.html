@@ -1,0 +1,714 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      background: #1a1420;
+    }
+    #story-canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+    }
+  </style>
+  <div id="root" data-composition-id="story" data-width="1920" data-height="1080" data-duration="28">
+    <canvas id="story-canvas" width="1920" height="1080" data-layout-allow-overflow></canvas>
+  </div>
+  <script>
+    (function () {
+      // 角色零件由 design/export_pieces.py 產生並注入，請勿手改這個區塊
+      /*SPRITES*/
+      const SPRITES = {"f_head_open": {"x0": 6, "y0": 1, "rows": ["................................", "......o..................o......", "......oo................oo......", ".....owpo..............opwo.....", ".....oppwo............owppo.....", ".....opppwoooooooooooowpppo.....", "....owppwwwwwwwwwwwwwwwwppwo....", "....owwwwwwwwwwwwwwwwwwwwwwo....", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwkkwwwwwwwwwwkkwwwwwo...", "..owwwwwkhekwwwwwwwwkhekwwwwwo..", "..owwwwwkeekwwwwwwwwkeekwwwwwo..", "..owwwwwwkkwwwwwwwwwwkkwwwwwwo..", "..owwbbwwwwwwwwnnwwwwwwwwbbwwo..", "..owwwwwwwwwwowoowowwwwwwwwwwo..", "...owwwwwwwwwwowwowwwwwwwwwwo...", "....oosswwwwwwwwwwwwwwwwssoo...."], "pivot": [22, 18]}, "f_head_open_bow": {"x0": 6, "y0": 1, "rows": ["................................", "......o..................o......", "......oo............dd..odd.....", ".....owpo...........drdodrd.....", ".....oppwo..........drrdrrd.....", ".....opppwoooooooooodrdpdrd.....", "....owppwwwwwwwwwwwwddwwpddo....", "....owwwwwwwwwwwwwwwwwwwwwwo....", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwkkwwwwwwwwwwkkwwwwwo...", "..owwwwwkhekwwwwwwwwkhekwwwwwo..", "..owwwwwkeekwwwwwwwwkeekwwwwwo..", "..owwwwwwkkwwwwwwwwwwkkwwwwwwo..", "..owwbbwwwwwwwwnnwwwwwwwwbbwwo..", "..owwwwwwwwwwowoowowwwwwwwwwwo..", "...owwwwwwwwwwowwowwwwwwwwwwo...", "....oosswwwwwwwwwwwwwwwwssoo...."], "pivot": [22, 18]}, "f_head_happy": {"x0": 6, "y0": 1, "rows": ["................................", "......o..................o......", "......oo................oo......", ".....owpo..............opwo.....", ".....oppwo............owppo.....", ".....opppwoooooooooooowpppo.....", "....owppwwwwwwwwwwwwwwwwppwo....", "....owwwwwwwwwwwwwwwwwwwwwwo....", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "..owwwwwwkkwwwwwwwwwwkkwwwwwwo..", "..owwwwwkwwkwwwwwwwwkwwkwwwwwo..", "..owwwwwwwwwwwwwwwwwwwwwwwwwwo..", "..owwbbwwwwwwwwnnwwwwwwwwbbwwo..", "..owwwwwwwwwwowoowowwwwwwwwwwo..", "...owwwwwwwwwwowwowwwwwwwwwwo...", "....oosswwwwwwwwwwwwwwwwssoo...."], "pivot": [22, 18]}, "f_head_happy_bow": {"x0": 6, "y0": 1, "rows": ["................................", "......o..................o......", "......oo............dd..odd.....", ".....owpo...........drdodrd.....", ".....oppwo..........drrdrrd.....", ".....opppwoooooooooodrdpdrd.....", "....owppwwwwwwwwwwwwddwwpddo....", "....owwwwwwwwwwwwwwwwwwwwwwo....", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "..owwwwwwkkwwwwwwwwwwkkwwwwwwo..", "..owwwwwkwwkwwwwwwwwkwwkwwwwwo..", "..owwwwwwwwwwwwwwwwwwwwwwwwwwo..", "..owwbbwwwwwwwwnnwwwwwwwwbbwwo..", "..owwwwwwwwwwowoowowwwwwwwwwwo..", "...owwwwwwwwwwowwowwwwwwwwwwo...", "....oosswwwwwwwwwwwwwwwwssoo...."], "pivot": [22, 18]}, "f_head_wink": {"x0": 6, "y0": 1, "rows": ["................................", "......o..................o......", "......oo................oo......", ".....owpo..............opwo.....", ".....oppwo............owppo.....", ".....opppwoooooooooooowpppo.....", "....owppwwwwwwwwwwwwwwwwppwo....", "....owwwwwwwwwwwwwwwwwwwwwwo....", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwkkwwwwwwwwwwwwwwwwwo...", "..owwwwwkhekwwwwwwwwwkkwwwwwwo..", "..owwwwwkeekwwwwwwwwkwwkwwwwwo..", "..owwwwwwkkwwwwwwwwwwwwwwwwwwo..", "..owwbbwwwwwwwwnnwwwwwwwwbbwwo..", "..owwwwwwwwwwowoowowwwwwwwwwwo..", "...owwwwwwwwwwowwowwwwwwwwwwo...", "....oosswwwwwwwwwwwwwwwwssoo...."], "pivot": [22, 18]}, "f_head_wink_bow": {"x0": 6, "y0": 1, "rows": ["................................", "......o..................o......", "......oo............dd..odd.....", ".....owpo...........drdodrd.....", ".....oppwo..........drrdrrd.....", ".....opppwoooooooooodrdpdrd.....", "....owppwwwwwwwwwwwwddwwpddo....", "....owwwwwwwwwwwwwwwwwwwwwwo....", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwkkwwwwwwwwwwwwwwwwwo...", "..owwwwwkhekwwwwwwwwwkkwwwwwwo..", "..owwwwwkeekwwwwwwwwkwwkwwwwwo..", "..owwwwwwkkwwwwwwwwwwwwwwwwwwo..", "..owwbbwwwwwwwwnnwwwwwwwwbbwwo..", "..owwwwwwwwwwowoowowwwwwwwwwwo..", "...owwwwwwwwwwowwowwwwwwwwwwo...", "....oosswwwwwwwwwwwwwwwwssoo...."], "pivot": [22, 18]}, "f_body": {"x0": 6, "y0": 18, "rows": ["....oosswwwwwwwwwwwwwwwwssoo....", ".....oswwwwwwwwwwwwwwwwwwso.....", ".....owwwwwwwwwwwwwwwwwwwwo.....", "....oswwwwwwwwwwwwwwwwwwwwso....", "....oswwwwwwwwwwwwwwwwwwwwso....", "...oswwwwwwwwwwwwwwwwwwwwwwso...", "...owwwwwwwwwwwwwwwwwwwwwwwwo...", "...owwwwwowwwwwwwwwwwwowwwwwo...", "..oswwwwwowwwwwwwwwwwwowwwwwso..", "..oswwwwwowwwwwwwwwwwwowwwwwso..", "..oswwwwwowwwwwwwwwwwwowwwwwso..", "..owwwwwwowwwwwwwwwwwwowwwwwwo..", "..owwwwwwowwswwwwwwswwowwwwwwo..", "...owwwwwowwswwwwwwswwowwwwwo...", "....oooooooooooooooooooooooo...."], "pivot": [22, 33]}, "f_tail": {"x0": 36, "y0": 19, "rows": ["....oo.", "...owwo", "...owwo", "..owwo.", "..owwo.", ".owwo..", ".owwo..", "owwo...", "owwo...", "owwo...", "owwso..", ".owwso.", "..oooo."], "pivot": [37, 31]}, "paw": {"x0": 0, "y0": 0, "rows": [".ooo.", "owwwo", "owwwo", "oswso", ".ooo."], "pivot": [2, 2]}, "s_head_open": {"x0": 10, "y0": 0, "rows": ["....o.........o......", "....oo.......owo.....", "...opwooooooopwo.....", "...oppwwwwwwwppwo....", "...owwwwwwwwwppwo....", "..owwwwwwwwwwwwwwoo..", "..owwwwwwwwwwwwwwwo..", ".owwwwwwwwwwwwwwwwwo.", ".owwwwwwwwwwwkkhwwwo.", ".owwwwwwwwwwwkekwwwo.", "owwwwwwwwwwwwwkkwwwwo", ".owwwwwwwwwwwwwwwwwwn", ".owwwwwwwwwwwwbbwwwwo", ".owwwwwwwwwwwwwwwwwoo", "..owwwwwwwwwwwwwwwwoo", "..oowwwwwwwwwwwwwoo..", "....ooooooooooooo...."], "pivot": [20, 16]}, "s_head_open_bow": {"x0": 10, "y0": 0, "rows": ["....o.dd...dd.o......", "....oodrd.drdowo.....", "...opwdrrdrrdpwo.....", "...oppdrdwdrdppwo....", "...owwddwwwddppwo....", "..owwwwwwwwwwwwwwoo..", "..owwwwwwwwwwwwwwwo..", ".owwwwwwwwwwwwwwwwwo.", ".owwwwwwwwwwwkkhwwwo.", ".owwwwwwwwwwwkekwwwo.", "owwwwwwwwwwwwwkkwwwwo", ".owwwwwwwwwwwwwwwwwwn", ".owwwwwwwwwwwwbbwwwwo", ".owwwwwwwwwwwwwwwwwoo", "..owwwwwwwwwwwwwwwwoo", "..oowwwwwwwwwwwwwoo..", "....ooooooooooooo...."], "pivot": [20, 16]}, "s_head_happy": {"x0": 10, "y0": 0, "rows": ["....o.........o......", "....oo.......owo.....", "...opwooooooopwo.....", "...oppwwwwwwwppwo....", "...owwwwwwwwwppwo....", "..owwwwwwwwwwwwwwoo..", "..owwwwwwwwwwwwwwwo..", ".owwwwwwwwwwwwwwwwwo.", ".owwwwwwwwwwwwwwwwwo.", ".owwwwwwwwwwwwkwwwwo.", "owwwwwwwwwwwwkwkwwwwo", ".owwwwwwwwwwwwwwwwwwn", ".owwwwwwwwwwwwbbwwwwo", ".owwwwwwwwwwwwwwwwwoo", "..owwwwwwwwwwwwwwwwoo", "..oowwwwwwwwwwwwwoo..", "....ooooooooooooo...."], "pivot": [20, 16]}, "s_head_happy_bow": {"x0": 10, "y0": 0, "rows": ["....o.dd...dd.o......", "....oodrd.drdowo.....", "...opwdrrdrrdpwo.....", "...oppdrdwdrdppwo....", "...owwddwwwddppwo....", "..owwwwwwwwwwwwwwoo..", "..owwwwwwwwwwwwwwwo..", ".owwwwwwwwwwwwwwwwwo.", ".owwwwwwwwwwwwwwwwwo.", ".owwwwwwwwwwwwkwwwwo.", "owwwwwwwwwwwwkwkwwwwo", ".owwwwwwwwwwwwwwwwwwn", ".owwwwwwwwwwwwbbwwwwo", ".owwwwwwwwwwwwwwwwwoo", "..owwwwwwwwwwwwwwwwoo", "..oowwwwwwwwwwwwwoo..", "....ooooooooooooo...."], "pivot": [20, 16]}, "s_torso_flat": {"x0": 13, "y0": 16, "rows": ["....ooooo.....", "...owwwwwo....", "..owwwwwwwo...", ".owwwwwwwwwo..", ".owwwwwwwwwo..", ".owwwwwwwwwwo.", "owwwwwwwwwwwwo", "owwwwwwwwwwwwo", "owwwwwwwwwwwwo", ".owwwwwwwwwwwo", ".owwwwsssssso.", ".owwwwwsssso..", "..owwwwwwwo...", "...owwwwwo....", "....ooooo....."], "pivot": [19, 28]}, "s_torso_belly": {"x0": 13, "y0": 16, "rows": ["....ooooo...........", "...owwwwwooooooo....", "..owwwwwwwwwwwwwo...", ".owwwwwwwwwwwhhwwo..", ".owwwwwwwwwwhhwwwwo.", ".owwwwwwwwwwhwwwwwwo", "owwwwwwwwwwwwwwwwwwo", "owwwwwwwwwwwwwwwwwwo", "owwwwwwwwwwwwwwwwwwo", ".owwwwwwwwwwwwwwwwwo", ".owwwwwwwwwwwwwwwwwo", ".owwwwwwwwwwwwwwwwwo", "..owwwsssssssssssso.", "...owwwsssssssssso..", "....ooooooooooooo..."], "pivot": [19, 28]}, "s_torso_belly_dress": {"x0": 13, "y0": 16, "rows": ["....ooooo...........", "...QPPPPUQUQQQQQ....", "..QVVVVVVUVVVVVVQ...", ".QPPPPPPPPPPPPPPPQ..", ".QPPPPPPPPPPPPLLPPQ.", ".QPPPPPPPPPPPLLPPPPQ", "QPPPPPPPPPPPPLPPPPPQ", "QPPPPPPPPPPPPPPPPPPQ", "QPPPPPPPPPPPPPPPPPPQ", ".QPPPPPPPPPPPPPPPPPQ", ".QPPPPPPPPPPPPPPPPPQ", ".QPPPPPPPPPPPPPPPPPQ", "..QPPPRRRRRRRRRRRRQ.", "...QPPPRRRRRRRRRRQ..", "....hLhLhLhLhLhLh..."], "pivot": [19, 28]}, "s_leg_back": {"x0": 16, "y0": 26, "rows": ["oooo..", "osso..", "osso..", "osso..", "osso..", "osssoo", "oooooo"], "pivot": [17.5, 26.5]}, "s_leg_front": {"x0": 22, "y0": 27, "rows": ["oooo..", "owwo..", "owwo..", "owwo..", "owwwoo", ".ooooo"], "pivot": [23.5, 27.5]}, "s_arm": {"x0": 18, "y0": 17, "rows": ["..oooooooo.", ".owwwwwwwwo", "owwwwwwwwwo", ".owwwwwwwwo", "..oooooooo."], "pivot": [20, 19]}, "s_arm_dress": {"x0": 18, "y0": 17, "rows": ["..QQQQoooo.", ".QPPPPwwwwo", "QPPPPPwwwwo", ".QPPPPwwwwo", "..QQQQoooo."], "pivot": [20, 19]}, "s_tail": {"x0": 4, "y0": 15, "rows": [".oo.........", "owwo........", "owwo........", "owwwo.......", "owwwo.......", ".owwwo......", ".owwwo......", "..owwwo.....", "..owwwwo....", "...owwwwo...", "....owwwwoo.", "....owwwwwwo", ".....owwwwwo", "......oowwwo", "........ooo."], "pivot": [14, 27]}, "gift0": {"x0": 0, "y0": 0, "rows": ["...............", "...............", "...............", "...............", "...............", "......ooo......", "....oofffoo....", "...offfffffo...", "..offfffffffo..", ".offfffffffffo.", ".offfffffffffo.", ".offfffffffffo.", ".offfffffffffo.", ".offfffffffsso.", ".offfffffffsso.", "..offfffffsso..", "...offffssso...", "....oofffoo....", "......ooo......"], "pivot": [7, 11]}, "gift1": {"x0": 0, "y0": 0, "rows": ["...............", "...............", "...............", "...............", "...............", "......ooo......", "....oofffoo....", "...offfffffo...", "..offfffffffo..", ".ocffffffffffo.", ".ocffffffffffo.", ".ocffffffffffo.", ".ocffffffffffo.", ".ocffffffffsso.", ".ocffffffffsso.", "..offfffffsso..", "...offffssso...", "....oofffoo....", "......ooo......"], "pivot": [7, 11]}, "gift2": {"x0": 0, "y0": 0, "rows": ["...............", "...............", "...............", "...............", "...............", "......ooo......", "....oocffoo....", "...occcffffo...", "..ocUccfffffo..", ".occcccffffffo.", ".occcTcffffffo.", ".occcccffffffo.", ".ocTcccffffffo.", ".occcccffffsso.", ".occcccffffsso.", "..occcUfffsso..", "...occcfssso...", "....oocffoo....", "......ooo......"], "pivot": [7, 11]}, "gift3": {"x0": 0, "y0": 0, "rows": ["...............", "...............", "...............", "...............", "...............", "......ooo......", "....ooccUoo....", "...occccccco...", "..ocUccccccfo..", ".occcccccTcffo.", ".occcTcccccffo.", ".occcccccccffo.", ".ocTcccccccffo.", ".occccccccUsso.", ".occccccTccsso.", "..occcUcccsso..", "...occccssso...", "....oocccoo....", "......ooo......"], "pivot": [7, 11]}, "gift4": {"x0": 0, "y0": 0, "rows": ["...............", "...............", "...............", "...............", "...............", "......ooo......", "....ooccUoo....", "...occccccco...", "..ocUccccccco..", ".occcccccTccco.", ".occcTcccccTco.", ".occccccccccco.", ".ocTccccccccco.", ".occccccccUsso.", ".occccccTccsso.", "..occcUcccsso..", "...occccssso...", "....oocccoo....", "......ooo......"], "pivot": [7, 11]}, "gift5": {"x0": 0, "y0": 0, "rows": ["...............", "...............", "...............", "...............", "...............", "......ooo......", "....oocTUoo....", "...occcTccco...", "..ocUccTcccco..", ".occcccTcTccco.", ".occcTcTcccTco.", ".oTTTTTTTTTTTo.", ".ocTcccTccccco.", ".occcccTccUsso.", ".occcccTTccsso.", "..occcUTccsso..", "...occcTssso...", "....oocTcoo....", "......ooo......"], "pivot": [7, 11]}, "gift6": {"x0": 0, "y0": 0, "rows": ["...............", "...............", "...QQ...QQ.....", "...QTQ.QTQ.....", "...QTTQTTQ.....", "....QTQTQ......", "....oQQQUoo....", "...occcTccco...", "..ocUccTcccco..", ".occcccTcTccco.", ".occcTcTcccTco.", ".oTTTTTTTTTTTo.", ".ocTcccTccccco.", ".occcccTccUsso.", ".occcccTTccsso.", "..occcUTccsso..", "...occcTssso...", "....oocTcoo....", "......ooo......"], "pivot": [7, 11]}, "envelope": {"x0": 0, "y0": 0, "rows": ["mmmmmmmm", "mcmccmcm", "mccmmccm", "mccTTccm", "mmmmmmmm"], "pivot": [4, 2]}, "heart": {"x0": 0, "y0": 0, "rows": [".T.T.", "TTTTT", ".TTT.", "..T.."], "pivot": [2, 2]}, "sparkle": {"x0": 0, "y0": 0, "rows": ["..y..", "..y..", "yyhyy", "..y..", "..y.."], "pivot": [2, 2]}, "hanger_dress": {"x0": 0, "y0": 0, "rows": ["......x......", ".....x.x.....", "....x...x....", "xxxxxxxxxxxxx", "...QPPPPPQ...", "...QVVUVVQ...", "..QPPPPPPPQ..", "..QPLPPPPPQ..", ".QPLPPPPPPPQ.", ".QPPPPPPPPPQ.", "QPPPPPPPPPPPQ", "QPPPPPPPPPPPQ", "hLhLhLhLhLhLh"], "pivot": [6, 0]}, "sign_front": {"x0": 0, "y0": 0, "rows": ["CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAACCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCAACC", "CCAACCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCBBBBBBBBBBBBBKBBBBBBKKBBKKKBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCC", "CCAAAAAAAAAAAAKKKKAAAAKKAAKKKAAAAAAAAAAAAAKKAAAAKKKAAAAKKAAAAAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAKKKKAAKKKAAAKKAAAAAAAAAAAAAKKAAAAKKKAAAAKKAAAAAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAKKKAAKKKKKKKKKKKKKKAAAAAAAKKAKKKKKKKKKKKKKKKKAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAKKAKKKKKKKKKKKKKKKAAAAAAKKKAKKKKKKKKKKKKKKKKAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAKKAAAAAKKKAAAAKKAAAAAAAAAAAAKKAAAAAKKKAAAAKKAAAAAAAAAKKKKKKKKKKKKKKKKKKKKAAAAAAAAAAAACC", "CCAAAAAAAAAAAKKKAAAKKKKAAAAKKAAAAAAAAAAAAKKAAAAAKKKAAAAKKAAAAAAAAAKKKKKKKKKKKKKKKKKKKKAAAAAAAAAAAACC", "CCAAAAAAAAAAAKKKKAKKKKKKKKKKKKKKKKAAAAAAKKKAKKKKKKKKKKKKKKKKKKAAAAKKAAAAAAAKKAAAAAAAKKAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAKKKAKKKKKKKKKKKKKKKAAAAAAKKKAKKKKKKKKKKKKKKKKKKAAAAKKAAAAAAAKKAAAAAAAKKAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAKAAAKKKAAAAKKAAAAAAAAAAKKKKAAAAAKKAAAAAAAAAAAAAAAAKKAAAAAAAKKAAAAAAAKKAAAAAAAAAAAACC", "CCBBBBBBBBBBBBBBBBBBKKKBBBBKKBBBBBBBBBBKKKKBBBBKKKKKKKKKKKKKKBBBBBKKBBBBBBBKKBBBBBBBKKBBBBBBBBBBBBCC", "CCAAAAAAAAAAAAAAAKKAKKKKKKKKKKKKKKAAAAAKKKKAAAKKKKKKKKKKKKKKKAAAAAKKAAAAAAAKKAAAAAAAKKAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAKKAKKKKKKKKKKKKKKAAAAAKAKKAAKKKKKAAAKKAAAKKKAAAAAKKAAAAAAAKKAAAAAAAKKAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAKKAAKKKAAAAKKAAAAAAAAAAAAKKAKKKKKKAAAKKAAAKKKAAAAAKKKKKKKKKKKKKKKKKKKKAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAKKKAAKKKAAAAKKAAAAAAAAAAAAKKAKKAKKKKKKKKKKKKKKAAAAAKKKKKKKKKKKKKKKKKKKKAAAAAAAAAAAACC", "CCAAAAAAAAAAAAKKKAAAKKKKKKKKKKKKKKKAAAAAAKKAKAAKKKKKKKKKKKKKKAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAKKKAAAAKKKKKKKKKKKKKKKAAAAAAKKAAAAKKKAAAKKAAAKKKAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAKAAAAAAAAKKAAAAAAAAAAAAAAAAKKAAAAKKKAAAKKAAAKKKAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAKKAAAAKKKKKKKKKKKKKKAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAKKKKKKKKKKKKKKKKKKKKKKKAAAAAKKAAAKKKKKKKKKKKKKKKAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCBBBBBBBBBBBKKKKKKKKKKKKKKKKKKKKKKKBBBBBKKBBKKKKBBBBKKBBBKKKBBBBBBBBBBBBBBKKBBBBBBBBBBBBBBBBBBBBBCC", "CCAAAAAAAAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAKKAAKKKAAAAAKKAKKKKKAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAKKAAAKAAAAAAKKAKKKKAAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAKKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCAACCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCAACC", "CCAACCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCAACC", "CCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCC", "CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACC", "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"], "pivot": [50, 22], "unit": 0.5}, "sign_back": {"x0": 0, "y0": 0, "rows": ["QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXTTXXXTTTTTTTTTXXXXTTTTTTTTTTTTTXXXXXXXXXTTXXXXXXTTXXXXXXTTTTTTTXTTTTTTTXXXXXXXXQQXXQQ", "QQXXXXXXXXXXXXXTTXXXTTTTTTTTTXXXXTTTTTTTTTTTTXXXXXXTTTTTTTTTTXXTTXXXXXXTTTTTTTXTTTTTTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXTTXTTXXXXXXXTTXXXXXXXXTTXXXXTTTTTXXXXXXXXXXXXXXXTTTTTXXXTTXXXTTXTTXXXTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXTTTTTTXXXXXTTXXXXXXXXXTTXXXXTTTTTXXXXXTTTTTTXXXXTTTTTXXXTTTTTTTXTTTTTTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXTTTTTTTTXXXXTTXXXXXXXXXXTXXXXXXXXXTXXXXXTXXXTTXXXXTTXXXXXXTTTTTTTXTTTTTTTXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYTTTTTTTYYYYTTYYYYYYYYYYTTTTTTTTTYTTYYYYYTYYYTTYYYYTTYYYYYYTTYYYTTYTTYYYTTYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXTTXXTTXXXXTTXXXXXXXXXTTTTTTTTTTXTTXXXXXTTTTTTXTTTTTTTXXXXTTTTTTTXTTTTTTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXTTXXTTTTTTTTTTTTXXXTTTXXXXXTTTTTTTXXXXXXXXXXXXTTTTTTTXXXXTTTTTTTXTTTTTTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXTTXXTTTTTTTTTTTTXXTTXXXXXXTTXXXTTXXXXXTTTTTTTTXTTXXTTXXXXTTXXXXXXXXXXXTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXTTXTTXXXXXTTXXXXXXTTTTTTTTTTTTTTTTTXXXTXXXXXXTXTTXXTTXXXXTTXXXXXXXXXXXTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXTTXTTXXXXXTTXXXXXXTTTTTTTTTTTTTTTTTXXXTXTTTTXTXXTTXTTXXXXTTXXXXXXXXXXXTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXTTTTXXXXXTTXXXXXXXXXXXXXXTTXXXXXXXXXXTXTTTTXTXXTTTTXXXXXTTXXXXXXXXXXXTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXTTTXXXXXTTXXXXXXXXXXXXXXTTXXXXXXXXXXTXTTTTXTXXXTTTXXXXXTTXXXXXXXXXXXTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXTTTTTXXXXTTXXXXXXXXXXXXXXTTXXXXXXXXXXTXXXXXTTXXXTTTXXXXXTTXXXXXXXXXXXTTXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXTTXXXTTTTTTTXXXXXXXXXXXTTTTXXXXXXXXXXXTXXXXTTTXTTTXTTXXXXTTXXXXXXXXXTTTTXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYTYYYYYYYTTTTYYYYYYYYYYYTTTTYYYYYYYYYYYTYYYYTTTYTTYYYTTYYYTTYYYYYYYYYTTTTYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXUXXXXXXXXUXXXXUXXXXXXXUXXXXUXUXXXXXXUXXXUXXXXXXXXXUUUUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXUUUUUUUUUUUXXXUXXXUUUUUXXXXUXXUUUUUUUXXUXUXXUUXXXXXXXXXUXXXUUUXXXXXXXXXXXXXUXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXUUUXUUXXUUXXXUUUXUXUXUXUXXUXUXXUUUUUUXXXXXUXXXXUUXXXXXXXXXXXXXUXXXXXXXXXXXXXXQQ", "QQXXXXXXXXUUXXXUUXXXXXUXXUUUUUUUXXXXUXUUUUUUUXXUUUUUUUUUUUXXXXXUXXXXUUXXUUUXXXUUUUUUUUXUUXXXXUXXXXQQ", "QQXXXXXXXUUXXXXXUUXXXXUXXUUXUXUUXXXXUXUXUXUXUXXUXUXUXUXUXUXXXXXUXXXUUXXXUXXUXXUUXXXUXXXUUXXXXUXXXXQQ", "QQYYYYYYUUYUYYYUYUUYYYUUUUUUUUUUYYYUUYUUUUUUUYYUYUUYYUYUYUYYYYYUUUUUYYYYYYYUYYUYYYYUYYYYUUYYUYYYYYQQ", "QQXXXXXXXXXUUXUUXXXXXUUUXUUXUXUUXXUUUUUUXXXUXXXXUUXXUXUUXUXXXXXUXXXXXXXXUUUUXXUXXXXUXXXXUUXXUXXXXXQQ", "QQXXXXXXXXXXUUUXXXXXXXUXXUUUUUUUXXUUUUUUXXXUXXXUXUXUXXUXXUXXXXXUXXXXXXXUXXXUXXUXXXXUXXXXXUXUXXXXXXQQ", "QQXXXXXXXXXXUUUXXXXXXXUXXXXUUUXXXXXUXXUUUUUUXXXXXUXXXUUXXUXXXXXUXXXXXXXUXXUUXXUXXXXUXXXXXUUUXXXXXXQQ", "QQXXXXXXXXUUUXUUUXXXXXUXXXUUXXUUXXXUXXXUUXUUXXXXXUXXUUXXUUXXXXXUXXXXXXXXUUXUXXUXXXXXUUXXXXUXXXXXXXQQ", "QQXXXXXXUUUXXXXXXUUXXUUXXUUXXXXUXXXUXUUUUUUUUXXXXUXXUXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"], "pivot": [50, 22], "unit": 0.5}, "letter": {"x0": 0, "y0": 0, "rows": ["QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccTTccTTcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTcccccccTTccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTccTTcccccccccccccQQQ", "QQQccccccccccccTTccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccccccTTccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTccTTcccccccPcccccQQQ", "QQQcccccPccccTTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTccTTTTTTTTTccTTcccccccccccTTccccccccccTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTcccccPcccccQQQ", "QQQcccccPccccTTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTcTTTTTTTTTccTTccccccccccTTTTcccccccccTTTcccccccccccccccTTTTTTTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTcccccPcccccQQQ", "QQQcccccPccccccTTTTTTcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTccTTTcccTTTcTTTTTTTcccccccTTTcccTTTTTTTTTTTTTTTcccccccccTTTTTTTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTcccccccccccccQQQ", "QQQccccccccccccTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTcTTTTTTTccccTTTTTTTTTTTTTTTTTTTTTTTTcccccccccccccccccccTTTTcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTcccccccccccccQQQ", "QQQccccccccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTcTTccTTcccccTTTTTTTTTccccccTTTccccccccccccccccccccccccTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTcccccccccccccccQQQ", "QQQccccccccccccccTTcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTcTTTcccTTTcTTccTTcccccccccccccccTTTTTTTTTTTTTccccccTTcccccccccTTTTcccccTTcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTcccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTcTTTcccTTTTTTcTTTcccccccccccccccTTTTTTTTTTTTTccccccTTcccTccccTTTTcccTccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTcTTTTTTTTTTTccTTTccccccTTTTTTTcccccccTTTcccccccccccTTccTTTcccTTTcccTTTcTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccTTTTTTTTTcTccTTTccccccTTTTTTTcTTTTTTTTTTTTTTTcccccTTccTTTTTcTTTcTTTTTcTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTcccccTTccccccTcTTcccccccccccccccTTTTTTTTTTTTTTTcccccTTccccTTTcTTTcTTTcccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccTTTTTTTTTTcTTcTTcccccccccccccccccccccccccccccccccccTTcccccTccTTTcTTccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccTTTTTTTTTTcTTTTTcccccccTTTTTTTcccTTTTTTTTTTTTccccccTTccccccccTTTcccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTccTTTcccccccTTTTcccccccTTTTTTTcccTTTTTTTTTTTTccccccTTcccccTccTTTcTcccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTccTTTccccccccTTTcccccccccccccccccTTccccccccTTccccccTTccccTTTcTTTTTTccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccTTTTTTTTcccTTTcccccccccccccccccTTccccccccTTccccccTTcccTTTccTTTcTTTcccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccTTTTTTTTccTTTTcccccccccccccccccTTTTTTTTTTTTccccccTTcTTTTcccTTTccTTTccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccTTcccTTTcTTTTTTccccccTTTTTTTcccTTTTTTTTTTTTccccccTTcTTTccccTTTcccTTTcTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTccTTTcccTTTcTTTcTTccccccTTTTTTTccTTTccccccccTTccccccTTccTcccccTTTccccTccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccTTTcccTTcTTTccTTTcccccTTccTTTccTTTccccccccTTccccccTTcccccTTTTTccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTcTTTTTcTTccccTTcccccTTccTTTccTTTTTTTTTTTTTccccccTTcccccTTTTTccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTcccTTTcccTccccTccccccTTccTTTccTTTTTTTTTTTTTccccccTTccccccccccccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccTTTTccccccccccccccccccccTTTTTTTccTTTccccccccTTccccccTTTTTTTTTTTTTTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTcccTTTTTTTTTTTTTTTTTTTccccTTTTTTTcTTTccccccccTTTccccccTTTTTTTTTTTTTTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTcccccccTTTTTTTTTTTTTTTcccccTTccTTTcTTTccccccTTTTTccccccccccccccccccccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTcccccccTcccccccTTTTcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccKccccKKcccKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKcccccccccccccccccccccccccccccccccccccKcccccccccccKKccccKKcccccccccccccccccccccccccccKccccKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKccKKKKKcKKccccccKccccccKKcccccccKKKKKKcKKKKKKccccccccKKccccccccccccKKKKKKKcKKKKKcccccccccKccccccccccccccccKKccccccccccKKcccKKKKKKcccccKKcccccKKcKccccccKcKcccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccKccKccKKcKcccccccKKccKKKKKKKKKcccKKKKKKcKKKKKKccccccccKKccccccccccccKKKKKKKcKKKKKcccccccccKcccccccccKKKKKKKKKKKKKKKccccKKcccKKKKKKccccccKccKKKKKKKKKKcccKcKcccKKKKKKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKKKKKKKKccKKKKKKcccKKcccccccKKccKKcKKcccKcccKKKKKKKKKKKKKKKccccKcKKcKKcKKcKKccKKKKKKKKKKKKKKKccKKKKKKKKKKKKKKKccKKKKKcKKcccKKcccccccccKKcKKcKcKKccKKKKKKcKKKKKKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccKKKKcKccKKKKKKKccccccccKKKKKKKKccccKKccKKcKKcccKcccKKKKKKKKKKKKKKKcccKKcKKKKKcKKKKKccKKKKKKKKKKKKKKKcccccccccccccccccccKKKKKKKKKKKKKKcccKKKKKKKKKKKKKKKccKKKKKKKKcKKKKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKKcKKKKKKKcKcccKKKKKccccKKcccccccKKKKKKcKKKKKKccccccccKccccccccccccKKcKKKKKcKKKKKcccccKcccKcccKKccccccccKcccccKccccccccKKcKKKKKKKKKcccKKKKKKKcKKcKcKKccKKcKccKccKcKKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKccKKcccKcKcccccccccKKKKKKKKKcccKKKKKKcKKKKKKcccccccKKcccccccccccKKKcKKccKcKKcKKccccKKcccKcccKKcccccccKKcccccKKcccccccKKccKKcKKccKccccccKcKKKKKKKKKKccKccKccccKKcKcKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKcKKKKKKcKKKcccKKKKKcccccccccccccKKccKKcKKcccKcccccccKKKKKKKKKccccKKKcKKKKKcKKKKKccccKKKccKccKKKccccccKKcccccccKKccccccKKKcKKcKKccKcccccKKccccccccccccccccKKKccKKcKcKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccKKKKcKKccccKKKcccccccccccccccccccccKKccKKcKKcccKcccccccKKKKKKKKKccccccKcKKKKKcKKKKKcccKKKKcKKKcKKKKccccKKcKKccccKcKKccccKKKKcKKKKcKKKcccccKKcKKKKKKKKKKcccKKKKKcKKcKKcKKccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccKKKKcKKKKKcKKcccccccccccKKKKKKKccccKKKKKKcKKKKKKccccccKKKKccccKKccccccKcKKcccccccKKcccKccKKKKKKKccKccccKccKKcccKKccKcccKKKKccKKKKKKcKccccKKKKccccccccccccKKKKKccKKcKccKKccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccKKcKccKKcKKKcccKKKKKccKcccccKccccKKKKKKcKKKKKKccccccKKcKKccKKcccccccKcKKcccccccKKccccccKKcKKKKcccccccccccKKcKKcccccccKKKKcKKKKKKKKKKccKKKKKcKKKKKKKKcccKKcKccKKcKKccKKccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccKcKKccKKcKcKcccKKcKKccKKKKKKKccccKKccKKcKKcccKcccccKKKccKKKKccccccccKcKKcccccccKKcccccKKccKccKKcccccccccccKKKKcccccccccKKcKKKKKKKKKKccKKKcKcKKccccKKccccccKccKccKcccKcccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKccKKcKKcKKccKKcKKccKcccccKccccKKccKKcKKcccKcccccKKccccKKKccccccccKcKKcccccccKKccccKKcccKcccKKcccccccccKKKKccccccccccKKcccccKKKcccccccKcccKKKKKKKKccccccKccccKKcccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKKcccccKcccKccKKcKKcKKKKKKKKccccKcccKKcKccccKccccKKccccKKKKKKccccccKcKKcccccccKKccKKKccccKccccKKKccccKKKKKKKKKKcccccccKKccccKKcKKccccccKccccKKccKKcccccccKcccKKccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccKKccKKKKKKKKKKKccKKKKKcKKcccccKcccKKccKKKKKccKKKcccKKKccKKKccKKKKKccccKcKKcccccKKKKccKKcccccKcccccKKccKKKKKKcccKKKKKKccKKKKcccKKccccKcccccKcccccKccKKcccccccKcccKccKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccKKcccKKKKKKKKKKccKKcKKcKccccKKKccccKccKKKcKccKKKcccKKccKKcccccccKKccccKcKKcccccKKKccccccccccKcccccccccKKKcccccccccKKKcccKKccKKcccccccKccccKccKKKKKKKKKKcccccKccccccKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKcccccccccccccccccccKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKcccccKKcKccccccKcKcccKKccccccccccccccKKcccccccccccKKKccccccKKKccccccccccKccccccccccKKKKKKKKKKKKKccccccKKccccccccccccccccccKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKccKKKKKKKKKKcccKcKcccKKKKKKKKcccccccKKKKKKKKKcccKKKKKcKKKKKKccccccccccccKccccccccccccccccKccccccccccccKKKKKKKKKKKccccccccKKcKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKcKKcKcKKccKKKKKKcKKKKKKKKccccccKKKKKKKKKKccccKKKccKKcKKccKccccccccccKcccccccccKKKKKKKKKKKKKKKccccKKKKKKKKKKKKccccccKKKcccKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKKKKKKKKKKKKKccKKKKKKKKcKKKKKKcccccKKKcccccKKccccccKKccKKcKKcKKccccKKKKKKKKKKKKKcccKKcKKccKcccKcKKcccKKccccccccccKccccKKKKKKKKKKKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKKKKKcKKcKcKKccKKcKccKccKcKKKKcccKKKKKKcccKKcccccKKKKKccccKKcccccccKKKKKKKKKKKKKcccKKcccKcKcKKKcKKccKKKKKKKKKKcccKcccKKKccccccccccKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKcKKKKKKKKKKccKccKccccKKcKcKKcccKKccKKKKKcccccccKKKKKcKKKKKKKKccccKKccccKcccccKcccKKccKKcKcKKKcKKccccKKKKKKKKcccKcccccKKKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKccccccccccccccccKKKccKKcKcKKccccccccKKKccccccccccKKccKKKKKKKKccccKKccccKcccccKccccccKKccKcccKcccccccKKccccKKcccKcccccKKKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKcKKKKKKKKKKcccKKKKKcKKcKKcKKccccccKKKKKKKKKKcccccKKKcKKcKKcKKccccKKccccKcccccKcccKKKKKKKKKKKKKKKccccKKKKKKKKcccKcccccccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKKccccccccccccKKKKKccKKcKccKKcccKKKKKKKKKKKKKccccKKKKcKKKKKKKKccccKKKKKKKKKKKKKcccccccccKKcccccccccccKKKKKKKKccKKccccccccccccKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKKKcKKKKKKKKcccKKcKccKKcKKccKKccKKKcKcccccccKKccccKKKKcKKcKKcKKccccKKKKKKKKKKKKKccccKKKKKKKKKKKKKcccccKKcccccccKKKcccccKKKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKcKcKKccccKKccccccKccKccKcccKcccccccKcccccccKKcccKKKKcKKKKKKKKKKcccccccccKccccccccccKKccKcccKcccKcccccKKcccccccKKKcccccKKKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKcccKKKKKKKKccccccKccccKKcccKcccccccKcccccccKKcccccKKcKKKKKKKKKKcccccccccKccccccccccKKccKcccKcccKcccccKKcccccccccKKccccKcccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKccccKKccKKcccccccKcccKKccccKcccccccKKKKKKKKKKcccccKKccKKccccKKccccccccccKccccccccccKKccKcccKcccKcccccKKcccccccccKKccccKKKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKcccccKccKKcccccccKcccKccKKKKcccccccKKKKKKKKKKcccccKKccKKcccKKKccccccccccKccccccccccKKccKcccKcKKKcccccKKKKKKKKKKKKKccccKKKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKccKKKKKKKKKKcccccKccccccKKKKcccccccKcccccccKKcccccKKccKKcccKKcccccccccccKccccccccccKKccKcccKcKKKccccccKKKKKKKKKKKcccccKcccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTcTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccTTTTTTTTTTTTTTTcccccccccccccccccccccTTTTTTTTTTTccccccccccccccccccccccccccccccTTccccccTTTTTTcTcTTccccccccccccccccccccccccccccTTccTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccUUcccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccTTccccccTccccTTcccccccccccccccccccccTTTTTTTTTTTcccccccccccccccccccccTTTTTTccTTTccccccTTTTTTTTcTTccccccccccccccccccccccccccTTTTccTcccccccccccccccccccccccccUUUUUUUccccccccccccccccccccccccccccccccccccccUUUUUUUcccccccccccccUUcccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccTTTTTTcTTTTTTccccccccccccccccccccccTcccccccccTcccccccccccccccccccccTTTTTTcTTTTTcccccccTTccTTTTTTTTTccccccccccccccccccccTTTTccccTTTTTTccccccccccccccccccccUUUUUUUccccccccccccccccccccccccccccccccccccccUUUUUUUUccccccccccccUUcccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccTTccTccTTccccccccccccccccccccccccTTTTTTTTTTTcccccccccccccccccccccccTTccTTTccTTccccccTTccTTTTTTTTTccccccccccccccccccccTTcccccTTTTTTTccccccccccccccccccccUUcccccccccccccccccccccccccccccccccccccccccccUUcccUUUccccccccccccUUcccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccTTTTTcTTTTTTTTcccccccccccccccccccccTTTTTTTTTTTcccccccccccccccccccccccTTcTTTccTcTTcccccTTccTccTTccccccccccccccccccccccccTTcccccTTcccTTccccccccccccccccccccUUcccccccccccccccccccccccccccccccccccccccccccUUccccUUccccccccccccUUcccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccTTccTTcTTcTcccccccccKccccccccccccTcccccccccTccccccccccKccccccccccccTTcTTccTTccTTccTTTTTccccTTccccccccccccKcccccccccccTTcccccTccccTcccccccccKcccccccccccUUcccccUUcccccUUcccUUUUUcccccccccKcccccccccccUUcccUUcccccUUUUUcccUUcUUUUcccUUcccccUUcccccccKccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccTTTTTTTTTTTTTTcccccccccKKcccccccccccTTTTTTTTTTTccccccccccKKcccccccccTTTTTccTTTccTccccTTTTTcTTTTTTTTTccccccccKKccccccccccTTTTTTTTcTcTTcccccccccKKccccccccccUUUUUUcUUccccUUUccUUUUUUUccccccccKKccccccccccUUUUUUcccccUUUUUUUccUUUUUUUUccUUcccccUUcccccccKKcccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccKKccccccccccTTTTTTTTTTTcccccccccccKKccccccccTTTTTTTTTccTTccccccTTccTTTTTTTTTcccccccccKKcccccccccTTTTTTcTcTcTTccccccccccKKcccccccccUUUUUUccUUcccUUcccUcccUUUcccccccccKKcccccccccUUUUUUUUcccUcccUUUccUUUcccUUUccUUcccUUcccccccccKKccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccTTTTTTTTTTTccccccccccccKccccccccccTcccccccccTccccccccccccKccccccccccTTccTccTTTcTcccccTTccccTTTTcccccccccccccKcccccccccTTcTTccccTTcccccccccccccKcccccccccUUccccccUUcccUUccccccccUUccccccccccKcccccccccUUccccUUUcccccccUUccUUcccccUUccUUcccUUccccccccccKccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccTTcccccccTTcccccccccccccccccccccccTTTTTTTTTTTcccccccccccccccccccccccTTccccTTTcTTTccccTTccccTTTTTccccccccccccccccccccccTTcTTccccTTcccccccccccccccccccccccUUccccccUUccUUccccUUUUUUUccccccccccccccccccccUUcccccUUccUUUUUUUccUUcccccUUcccUUcUUccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccTTTTTTTTTTTcccccccccccccccccccccccTTTTTTTTTTTcccccccccccccccccccccccTTTcTTTTcTTTcccccTTTccTTTTcTccccccccccccccccccccccTTcTTcccTTTcccccccccccccccccccccccUUcccccccUUcUUcccUUUcccUUccccccccccccccccccccUUcccccUUcUUUcccUUccUUcccccUUcccUUcUUccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccTTcccccccTTcccccccccccccccccccccccccTTcccccccccccccccccccccccccccccTTTTTTTccTTTcccccTTTTcTTcTTcTTcccccccccccccccccccccTTcTTcccTTTTccccccccccccccccccccccUUcccccccUUUUccccUUcccUUUccccccccccccccccccccUUccccUUUcUUcccUUUccUUUcccUUUccccUUUUccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccTTTTTTTTTTTccccccccccccccccccccccccTTTcccTTcccccccccccccccccccccccTTTTTccTTTTccccccTTTTTTTccTTccTTccccccccccccccccccccTTcTTccTTccTccccccccccccccccccccccUUUUUUUccUUUUccccUUUUUUUUccccccccccccccccccccUUUUUUUUccUUUUUUUUccUUUUUUUUcccccUUUcccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccTTTTcccTTTTTccccccccccccccccccccccTTTccccTTTTcccccccccccccccccccccTTccccTTTTcccccccTTcccTcccTTcccTcccccccccccccccccccTTccTTcTTcccTTcccccccccccccccccccccUUUUUUUcccUUccccccUUUUcUUccccccccccccccccccccUUUUUUUccccUUUUcUUccUUcUUUUccccccUUUcccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccTTTccccccccTTTTccccccccccccccccccccTTTcccccccTTTTcccccccccccccccccccccccccTTccccccccccccccccccTTccccccccccccccccccccccccTccTTcTcccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccUUccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccTcccccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccUUUccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccUUUUcccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccUUUccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKcccccccKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccTTccTccccccccccTcccccccccccccccccccccccccccccccccccccccccccccccccccTTccccccccccccKKccccKKKKcccccccKcccccccccccccccKKcccccKKcccccccccccccccccccccccccccccccccccccccccccccccTTcccTTTTTTTTTcccTTcccTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccTTTTccTccccccccccTcccccTTTTTTcccTTTTTTcccccccccccccccccccccccccccccccTTccccccKKcKKKKKKKKcKccccccccccKcccccKKKKKKccccKKcccccKKccccccccccccKKKKccccccKKcccccccccccccccccccccccTTcccTTTTTTTTTcccTTcccTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccTTTTccccTTTTTTccTTTTTTTTcTTTTTTcccTTTTTTTccccccccccccccccccccccccccccccTTcccccKKccKKKKKKKKcKcccccccKKKKKKKKcKKKKKKccccKKccKKKKKKKKKcccccccKKKKKKKcccccKKccccccccccccccccccccccTTcTcTTccTcccccccTTcTcTTccTccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccTTcccccTTTTTTTccTTTTTTTTcTcccTTcccTTcccTTTcccccccccccccccccccccccccccccTTccccKKKccccKccKKccKcccccccKKKKKKKKcKcccKKccccKKccKKKKKKKKccccccccKcccKKKcccccKKKccccccccccccccccccccTTTTTTTTTTTTTTcccTTTTTTTTTTTTTTcccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccTTcccccTTcccTTcccccTccTTcTcccTTcccTTccccTTcccccccccccccccccccccccccccccTTccccKKcccccKccKcccKccccccccccKccKKcKcccKKccccKKccKccKKccKcccccccccccccKKccccccKKccccccccccccccccccccTTTTTTTTTTTTTTcccTTTTTTTTTTTTTTcccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccTTcccccTccccTccccccTccTTcTcccTTcccTTccccTTccccTTTTccccccTTTTTcccTTcTTccTTccccKKcccKKKKKKKKcKKKKKKcccccKccKKcKcccKKccKKKKKKKccKKccccccccccccccccKKccccccKKcccccccccKcccccccccccTTcTcTTccTcccccccTTcTcTTccTccccccccccccKcccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccTTTTTTTTcTcTTcccccTTccTTcTcccTTcccTTccccTTcccTTTTTTccccTTTTTTTccTTTTTccTTcccKKccccKKKKKKKKcKKKKKKccccKKccKKcKcccKKccKKKKKKKKKKKKKKccccccccccccKKccccccccKKccccccccKKccccccccccTccTcTTTTTTTTccccTccTcTTTTTTTTcccccccccKKccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccTTTTTTcTcTcTTcccccTTccTTcTcccTTcccTTcccTTTccTTTcccTTcccTcccTTTccTTTccccTTcccKKcccccccKKccccKccKccccccKKccKKcKcccKKccccKKccKKKKKKKKcccccccccccKccccccccccKKcccccccccKKcccccccccTcTTcTTTTTTTTccccTcTTcTTTTTTTTccccccccccKKcccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccTTcTTccccTTcccccccTTccTTcTcccTTcccTTTTTTTcccTTTTTTTTccccccccTTccTTcccccTTcccKKccccKKKKKKKKcKccKccccccKKccKKcKcccKKccccKKccKKKcccKKccccccccccKcccccccccccKKccccccccccKccccccccTTcTTcTTccTccccccTTcTTcTTccTccccccccccccccKcccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccTTcTTccccTTcccccccTTccTTcTcccTTcccTTTTTTccccTTTTTTTTcccTTTTTTTccTTcccccTTcccKKccccKKKKKKKKKKccKccccccKKccKKcKcccKKccccKKKKKcKKccKcccccccccccKcccccccccccKKccccccccccccccccccccTTTTcTTTTTTTTTcccTTTTcTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccTTcTTcccTTTcccccccTcccTTcTcccTTcccTTccccccccTTccccccccTTTcccTTccTTcccccTTcccKKcccccccKKcccKKccKccccccKcccKKcKcccKKcccKKKKKKcKKcKKcccccccccccccccccccccccKKcccccccccccccccccccccTTccTTTTTTTTTccccTTccTTTTTTTTTccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccTTcTTcccTTTTcccccTTcccTccTcccTTcccTTccccccccTTTcccTcccTTcccTTTccTTcccccTTcccKKcccccKKKKcKcKKccKcccccKKcccKccKcccKKccKKKKcKKccKKKccccccccccccccccccccccccKKcccccccccccccccccccccTTTccccccccTTccccTTTccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccTTcTTccTTccTcccccTTcccTccTTTTTTcccTTcccccccccTTTTTTcccTTTTTTTTccTTcccccTTcccKKKcccKKcKKcKKKKccKcccccKKcccKccKKKKKKccKKccKKcccKKKKccccccccccKKccccccccccKKKccccccccccccccccccccTTcTcTcTcTTcTTcccTTcTcTcTcTTcTTccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccTTccTTcTTcccTTcccTTcTTTTccTTTTTTcccTTccccccccccTTTTcccccTTTTcTTccTTcccccTTccccKKccccKcKKccKKcccKccccKKcKKKKccKKKKKKccccccKKcKKKccKKcccccccccKKccccccccccKKcccccccccccccccccccccTTccTTcTccTTTccccTTccTTcTccTTTcccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccTccTTcTcccccTTccTTccTTTccTcccTTccccccccccccccccccccccccccccccccccccccccccccccKKKcccccKKcccKcccKccccKKccKKKccKcccKKccccccKcKKcccccKKcccccccccccccccccccKKKcccccccccccccccccccccTcccTTccccTTTccccTcccTTccccTTTcccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTTTTccccccccccccccccccccTTTTTTcccTTcccccccccccccccccccccccccccccccccTTTTcccccKKcccccKKcccccccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTTTTccccccccccccccccccccTTTTTTTTTTTTTTTcccccccccccccccccccccccccccccTTcTcccccKKKKKcKKKKKKKcccKKKKKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTccccTccccTTccccccccccccccccccccccccTcTTTTTTTTTccccccccccccccccccccTTTTTTTTTTTTTTcccKKKKKKKKKKKKKKcccKKKKKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTTTTcccccccccccccccccccccccTTcccTTcccccccccccccccccccccccccTTTTTTTTTTTTTTccKKKcKccKKccKccccccKcccccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTTTTcccccccccccccccccccccccTccTTTccTTccccccccccccccccccccccTTcccccccTTcccccKKccKKcKcccKKcccccKcKKKKKKKKKcKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTccccTccccTTcccccccccKccccccccccccTTccTTTTTTTccccccccccKcccccccccccTTTTTTTTTTTcTcccKKKKKKKKKKKKKKKcccccKKKKKKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTTTTcccccccccKKcccccccccccTTTcTTTTTTcccccccccccKKccccccccccTTTTTTTTTTTcTccccccccccKcccccccccccccccccKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTTTTccccccccccKKcccccccccTTTTccccTTccTccccccccccKKcccccccccTTccTccccTTTTccccKKKKKKKKKKKKKccccccccccKKccccccccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTcccccccccccccccccKccccccccTTTTcccTTTccTTcccccccccccKcccccccccTTccTccTcTTTTccccccccccccccKcccccKKKKKKKKKKKKKKKccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTTTTTTcccccccccccccccccccTTTTcTTTTccTTccccccccccccccccccccccTTTTTTTTTTTTccccKKKKKKKKKKKKKKKccKKKKKKKKKKKKKKKccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTTTTTTTTTTcccccccccccccccccccccTTccTcccTTTccccccccccccccccccccccTTTTTTTTTTTTccccccccKccccccKccccccccccccKcccccccccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTcccccTccccccccccccccccccccccTTcccccTTTcccccccccccccccccccccccTTcTccTccTTccTccccccKKcccccKccccccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTccccccTccccccccccccccccccccccTTcccTTTTTTTcccccccccccccccccccccTccTTTTcTTTTTTcccccccKKccccKccccccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTTTTTcccTTTTTccccccccccccccccccccTTTTcTTTTcccTTTcccccccccccccccccccTTccTTTTTTcTTTTcccccccKccKKKKcccccccccKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTcccccccTTTTcccccccccccccccccccccTTccTTccccccTcccccccccccccccccccccTcTTcccTcccTTcccccccccccKKKKcccccccccKKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKKccccccccccccccKKcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccKcccccKKccccccKKcccKKcKKccccccccKKccKKcccKcccccKKKKKKKKKccccKKcccKKKKKKKKKKccccccKKKKKKKKKKKKKKKccKKKKKcKKKKKKKKcccccKccKKKKKKKKKccccccccKKKKKcccccccccccccKKcccccccccccccccKKccccccccccKKKKKKKKKKKKKcccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccKKKKKKKcKKKKKKKccccKKcKKccKKccccccccKKKKKKKKKKKKKccKKKKKKKKKcKccKKcccccccccKccccccccccccccKcccKcccccccKKKKKcKKKKKKKKcccccKccKKccccccKcccccccKKKcKKKKcccccKKKKKKKKKKKKKKKccccccccKKKKKKKKccccKcccKcccKcccKcccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccKKKKKKKcKKKKKKKcccccKKKKKKKKKKKKccccKcKKKKKKKKKKKcccccKKcccccKccKKccKKKKKKKKKKKKKKKcccccccKcccKcccccccccKKccKKcccccKcccccKccKKKKKKKKKcccccKKKKKKKKKKKKcccKKKKKKKKKKKKKKKccccccccKKccccccccccKKKKKKKKKKKKKcccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccKcccccKKcccccKcccKKKccKKcccccccKKcccKKcccKcccccccKKccKcccKccKKcccccccccKccccccccccKKKKKKKKKKKKKcccccKKccKKKKKKKKcccccKccKKccccccKcccKKKccccccccccKKcccccccKccccccccccccKKKKKKKKKKKKKKcccccKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccKKcccccccccKKccKKKKKKKKKKccccKKcKKKKKKKKKKKcccKKKccKKccKccKKccccKKKKKKKKKKKcccccKKccKcccKcccKcccccKKccKKKKKKKKcccKKKKKKKKKKKKKKccccKKKKKKKKKKKKKcccccccKKKKKKKKKKccccKKcccKKcccccKcccccccKccccccccKKccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccKKKKKKKKKKKKKKKcccKKccKKccKKccccccKKKcKKKKKKKKKKKccKKKKKKKKKcKccKKccccKccccKccccKcccccKKKKKKKKKKKKKcccKKKKKcKKcccccKcccKKKKKcccccccccccccKKcKccKccKcKKccccccKKKKKKKKKKKccccKKKKKKKKKKKcKcccKKKKKKKKKcKKcKKccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccKKKKKKKKKKKKKKKccccKccKKKKKKKKKcccKKKcccKKccccccccccKKKKKccKcKccKKccccKccccKccccKccccccccccKKcccccccccKKKKKcKKKKKKKKcccccKcKKKKKKKKKKKcccKKcKKcKcKKcKKccccccKKcccccccKKccccKKcccKKcccccccccccccccccccKKcKKccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPcccccccccccccccccccccccccccccccccccccccccccccKccccccccccccccKcKKccKKccccccKKKccKKKKKKKKKcccccccKKccccKccKKccccKKKKKKKKKKKcccccKKKccKKKKKKKKKccccKKccKKKKKKKKcccccKccccKKcccccccccKKKKKKKKKKKKKcccccKKKKKKKKKKKKccccKKcccKKKKKKKcccccKKKKKKKKcKKcKKccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccTTccTTccccccccccccccccccccccccccccccccKKKKKKKKKKcccccKKcKKccKKcccccccKKcKKKccKKccKccccKKKKKKKKcKccKKccccKccccKccccKccccKKcccKKcccccKKcccccKKccKKcccccKcccccKKKcKKKKKKKKKccccccccccccccccccccKcKKKKKKKKKKKccccKKccKcccccccccccccccccccccKKcKKcccccccccccccccccccccccccccTTccTTcccccccccccccQQQ", "QQQccccccccccccTTccTTcccccccccccccccccccccccccccccccKKKKKKKKKKKccccKKccKKKKKKKKKKcccKKcKcKKKKKKKKccccKKKKKKKKcKccKKccccKccccKccccKccccccccKKKKKKKKKKcccccKKKcKKKKKKKKcccccKKKKKcKKcKKKKccccKKKKKKKKKKKccccKKcKKcccccccKKccccKKcKKKKKKKKKcccccKKKKKKKKcKKcKKcccccccccccccccccccccccccccTTccTTcccccccccccccQQQ", "QQQccccccccccTTTTTTTTTTcccccccccccccccccccccccccccKKKKKccccccKKccccKcccccKccccccccccKKcccKccKKccKcccccccKKccccKccKKccccKKKKKKKKKKKcccccccKccKcccccKKcccccKKKKKKKKKKKKccccKKKKKcKKcKKcKKccccKKcccccccKKcccccccKKKKKKKKKKKccccKKcKccKcKKKKKKccccccccccccKKcKKcccccccccccccccccccccccccTTTTTTTTTTcccccPcccccQQQ", "QQQcccccPccccTTTTTTTTTTccccccccccccccccccccccccccKKccKKccccccKKccccccccccKccccccccccKKccKKKKKKKKKcccccccKKcKKcKccKKcccccccccKccccccccccKKKcKKKKKKKKKccccKKKKcccKccKcccccKKKcccKKccKKcKKccccKKKKKKKKKKKcccccccKKKKKKKKKKKccccKKKKKKKcKccKKKcccKKKKKKKccKKcKKcccccccccccccccccccccccccTTTTTTTTTTcccccPcccccQQQ", "QQQcccccPccccccTTTTTTccccccccccccccccccccccccccccccccKKKKKKKKKKcccKKKKKKKKKKKKKKKcccKKccKKccKKccKccccccKKKKKKccccKKcccKKKKKKKKKKKKKcccKKKcKKKKKcKKKccccKKKccccKKccKcKKccKccccKKccKKccKcccccKKcccccccKKcccccccKKcccccccKKccccKcKKKKKccccccccccKcccccKcccccKKcccccccccccccccccccccccccccTTTTTTcccccccPcccccQQQ", "QQQcccccPccccccTTTTTTccccccccccccccccccccccccccccccccKKKKKKKKKKcccKKKKKKKKKKKKKKKcccKKcKKcccKKccKcccKKKKKKKKccKKKKKcccccccccKcccccccccccKccccKKKKKcccccKKccKKKKcccKKKKccccccKKccKKcccKcccccKKKKKKKKKKKccccccKKcccccKKKKKcccKKccKKKKKKKKKKKcccKKKKKKKccKKKKccccccccccccccccccccccccccccTTTTTTcccccccccccccQQQ", "QQQccccccccccccccTTccccccccccccccccccccccccccccccccccKKccccccKKccccccccccKccccccccccKKcKKcccKKcKKcccKKKKcccccccKKKcccKKKKKKKKKKKKKKKccccKcKKKKKcKKKKKccccccKKKccccKKKKcccccccccKKKcKKKcccccKKcccccccKKccccccKcccccccKKKKccccKcKKccKKKKKKKKcccKcccccKcccKKKccccccccccccccccccccccccccccccTTcccccccccccccccQQQ", "QQQccccccccccccccTTccccccccccccccccccccccccccccccccccccccccccccccccccccccKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccKcKKcccccccKKccccccccccccccccccccccccccKcccKKKccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccTTcccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccPcccccQQQ", "QQQcccccPccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPPPcccPcccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"], "pivot": [150, 99], "unit": 0.3333333333333333}, "mk_head_open": {"x0": 4, "y0": 2, "rows": ["...oo......", "GGoFFoo....", "GFFFGGGo...", "oFFFGkhFo..", "oFFFGkkFFok", "oFFFFFJJJo.", ".oFFFFoooo.", "..oFFo.....", "..oooo....."], "pivot": [7.5, 10]}, "mk_head_happy": {"x0": 4, "y0": 2, "rows": ["...oo......", "GGoFFoo....", "GFFFGGGo...", "oFFFGkGFo..", "oFFFkGkFFok", "oFFFFFJJJo.", ".oFFFFoooo.", "..oFFo.....", "..oooo....."], "pivot": [7.5, 10]}, "mk_head_dizzy": {"x0": 4, "y0": 2, "rows": ["...oo......", "GGoFFoo....", "GFFFkGko...", "oFFFGkGFo..", "oFFFkGkFFok", "oFFFFFJJJo.", ".oFFFFoooo.", "..oFFo.....", "..oooo....."], "pivot": [7.5, 10]}, "mk_body": {"x0": 1, "y0": 10, "rows": ["....ooooo...", "...oFFJJJo..", "...oFFJJJo..", "...oFFJJJJoo", "..oFFFJJJJJo", "..oFFFJJJJJo", "..oFFFJJJJo.", "..oFFFJJJJo.", "..oFFFJJJJo.", "..oFFFJJJJo.", "..oFFFJJJJo.", "..oFFFJJJo..", "..oFFFJJJo..", ".oFFFFJJJo..", ".oFFFFFFFo..", "oFoFFFoFFo..", "oo.oFo.oFo..", "oo.ooo.ooo.."], "pivot": [7, 27]}, "ot_head_open": {"x0": 5, "y0": 1, "rows": ["oo.ooo....", "oOoOOOoo..", "oOOOOkhOo.", "oOOOOkkOo.", "oOOOOOJJJk", "oOOOOOJJJo", ".oOOOOJJJo", "..oOOOJoo.", "..ooooo..."], "pivot": [9, 9]}, "gf_neck_open": {"x0": 16, "y0": 0, "rows": [".....GG..GG...", ".....oo..oo...", ".....oo..oo...", ".....oo..oo...", ".....oo.oIo...", ".....oIoIkho..", ".....oIIIkkIo.", ".....oIIIIIIIo", ".....oIIIIJJJk", ".....oIIIIoJJo", ".....oIIIo.oo.", ".....oIIo.....", ".....GNNo.....", "....oINNo.....", "....GINNo.....", "....oIIIo.....", "....GNNNo.....", "...oINNNo.....", "...GINNo......", "...oIIIo......", "...GIIIo......", "...oNNNo......", "..GINNNo......", "..oINNIo......", "..GIIIIo......", "..oIIIIo......", "..GNNNIo......", "..oNNNo.......", ".GINNIo.......", ".oIIIIo.......", ".GIIIIo.......", ".oIIIIo.......", ".GINNNo.......", "oIINNNo.......", "oNNNNIo.......", "oNNIIIo.......", ".oIIIo........", "..ooo........."], "pivot": [19, 34]}, "el_head_open": {"x0": 32, "y0": 10, "rows": ["....ooooooooo....", "...oEEEEEEEEEo...", "..oEEEEEEEEEEEo..", ".oEEEEEEEEEEEEEo.", "oEEEEEEEEEEkhEEEo", "oEEEEEEEEEEkkEEEo", "oEEEEEEEEEEEEEEEo", "oEEEEEEEEEEEEEEEo", "oEEEEEEEEEEEbbbEo", "oEEEEEEEEEEEbbbEo", "oEEEEEEEEEEEEEEEo", "oEEEEEEEEEEEEEEEo", "oEEEEEEEEEEEEEEEo", ".oEEEEEEEEEEEEEo.", "..oEEEEEEEEEEEoo.", "...oEEEEEEEEEocc.", "....ooooooooo.oc."], "pivot": [36, 22]}, "ot_head_happy": {"x0": 5, "y0": 1, "rows": ["oo.ooo....", "oOoOOOoo..", "oOOOOkOOo.", "oOOOkOkOo.", "oOOOOOJJJk", "oOOOOOJJJo", ".oOOOOJJJo", "..oOOOJoo.", "..ooooo..."], "pivot": [9, 9]}, "gf_neck_happy": {"x0": 16, "y0": 0, "rows": [".....GG..GG...", ".....oo..oo...", ".....oo..oo...", ".....oo..oo...", ".....oo.oIo...", ".....oIoIkIo..", ".....oIIkIkIo.", ".....oIIIIIIIo", ".....oIIIIJJJk", ".....oIIIIoJJo", ".....oIIIo.oo.", ".....oIIo.....", ".....GNNo.....", "....oINNo.....", "....GINNo.....", "....oIIIo.....", "....GNNNo.....", "...oINNNo.....", "...GINNo......", "...oIIIo......", "...GIIIo......", "...oNNNo......", "..GINNNo......", "..oINNIo......", "..GIIIIo......", "..oIIIIo......", "..GNNNIo......", "..oNNNo.......", ".GINNIo.......", ".oIIIIo.......", ".GIIIIo.......", ".oIIIIo.......", ".GINNNo.......", "oIINNNo.......", "oNNNNIo.......", "oNNIIIo.......", ".oIIIo........", "..ooo........."], "pivot": [19, 34]}, "el_head_happy": {"x0": 32, "y0": 10, "rows": ["....ooooooooo....", "...oEEEEEEEEEo...", "..oEEEEEEEEEEEo..", ".oEEEEEEEEEEEEEo.", "oEEEEEEEEEEkEEEEo", "oEEEEEEEEEkEkEEEo", "oEEEEEEEEEEEEEEEo", "oEEEEEEEEEEEEEEEo", "oEEEEEEEEEEEbbbEo", "oEEEEEEEEEEEbbbEo", "oEEEEEEEEEEEEEEEo", "oEEEEEEEEEEEEEEEo", "oEEEEEEEEEEEEEEEo", ".oEEEEEEEEEEEEEo.", "..oEEEEEEEEEEEoo.", "...oEEEEEEEEEocc.", "....ooooooooo.oc."], "pivot": [36, 22]}, "ot_body": {"x0": 0, "y0": 8, "rows": ["......ooooo...", ".....oOOJJJo..", "....oOOOJJJJo.", "....oOOOJJJJo.", "....oOOOJJJJo.", "...oOOOOJJJJJo", "...oOOOOJJJJJo", "...oOOOOJJJJJo", "....oOOOJJJJo.", "..ooOOOOJJJJo.", "..oOOOOOJJJJo.", ".oOOOOOOJJJo..", "oOOOoOOOOOOo..", "oooo.ooooooo.."], "pivot": [8, 21]}, "ot_arm": {"x0": 10, "y0": 11, "rows": ["ooooo", "oOOOo", "ooooo"], "pivot": [10, 12]}, "gf_body": {"x0": 0, "y0": 30, "rows": ["........ooooooooooo....", "......ooIIIINNNIIIIoo..", ".....oINNNIINNIIIIINNo.", "...ooIINNNIIIIIIIIINNNo", "...oIIINNIIIIIIINNNNNIo", "...oNNNIIIIIIIIINNNIIIo", "..oINNNIINNNIIIINNIIIIo", "..oIoNIIINNNIIIIIIIIIIo", "..oo.oIIINNIIINNNIIIIo.", "..o...ooIIIIIINNNIIoo..", ".oo.....ooooooooooo....", "GGo....................", "GG....................."], "pivot": [13, 41]}, "gf_leg_back": {"x0": 6, "y0": 39, "rows": ["ooo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oGo", "oGo", "ooo"], "pivot": [7, 40]}, "el_leg_back": {"x0": 9, "y0": 32, "rows": ["ooooooo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "ocEcEco", "ooooooo"], "pivot": [12, 33]}, "gf_leg_back_far": {"x0": 8, "y0": 39, "rows": ["ooo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oGo", "oGo", "ooo"], "pivot": [9, 40]}, "el_leg_back_far": {"x0": 13, "y0": 32, "rows": ["ooooooo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "ooooooo"], "pivot": [16, 33]}, "gf_leg_front": {"x0": 17, "y0": 39, "rows": ["ooo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oIo", "oGo", "oGo", "ooo"], "pivot": [18, 40]}, "el_leg_front": {"x0": 28, "y0": 32, "rows": ["ooooooo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "oEEEEEo", "ocEcEco", "ooooooo"], "pivot": [31, 33]}, "gf_leg_front_far": {"x0": 19, "y0": 39, "rows": ["ooo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oNo", "oGo", "oGo", "ooo"], "pivot": [20, 40]}, "el_leg_front_far": {"x0": 32, "y0": 32, "rows": ["ooooooo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "oDDDDDo", "ooooooo"], "pivot": [35, 33]}, "el_body": {"x0": 2, "y0": 16, "rows": ["..............ooooooooooooo.........", "...........oooEEEEEEEEEEEEEooo......", "..........oEEEEEEEEEEEEEEEEEEEo.....", "........ooEEEEEEEEEEEEEEEEEEEEEoo...", ".......oEEEEEEEEEEEEEEEEEEEEEEEEEo..", "......oEEEEEEEEEEEEEEEEEEEEEEEEEEEo.", "......oEEEEEEEEEEEEEEEEEEEEEEEEEEEo.", ".....oEEEEEEEEEEEEEEEEEEEEEEEEEEEEEo", "....oEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEo", "....oEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEo", "...oEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEo", "...ooEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEo", "...o.oEEEEEEEEEEEEEEEEEEEEEEEEEEEEEo", "..oo.oEEEEEEEEEEEEEEEEEEEEEEEEEEEEEo", "..oo..oEEEEEEEEEEEEEEEEEEEEEEEEEEEo.", "..o...oEEEEEEEEEEEEEEEEEEEEEEEEEEEo.", "oo.....oEEEEEEEEEEEEEEEEEEEEEEEEEo..", "oo......ooDDDDDDDDDDDDDDDDDDDDDoo...", "..........oDDDDDDDDDDDDDDDDDDDo.....", "...........oooDDDDDDDDDDDDDooo......", "..............ooooooooooooo........."], "pivot": [22, 37]}, "el_ear": {"x0": 28, "y0": 11, "rows": ["....oooo....", "..ooDDDDoo..", ".oDDDDDDDDo.", ".oDDppppDDo.", "oDDppppppDDo", "oDppppppppDo", "oDppppppppDo", "oDppppppppDo", "oDppppppppDo", "oDppppppppDo", "oDppppppppDo", "oDppppppppDo", "oDDppppppDDo", ".oDDppppDDo.", ".oDDDDDDDDo.", "..ooDDDDoo..", "....oooo...."], "pivot": [36, 13]}, "el_trunk": {"x0": 44, "y0": 19, "rows": [".oooo...", "oEEEEo..", "oEEEEo..", "oEEEEo..", "oEEEEo..", ".oEEEEo.", ".oEEEEo.", ".oDDEEo.", "..oEEEo.", "..oEEEEo", "...oDDEo", "...oEEEo", "...oEEEo", "...oDDEo", "...oEEEo", "....oEEo", "....oDEo", "....oEEo", "....oEEo", "....oDEo", ".....oEo", ".....ooo"], "pivot": [45.5, 21]}, "egg_shell": {"x0": 0, "y0": 1, "rows": ["..ooo..", ".ozZZo.", ".oZzZo.", "oZZZzZo", "oZzZZZo", ".oZZzo.", ".oZzZo.", "..ooo.."], "pivot": [3, 4.6]}, "egg_peeled": {"x0": 0, "y0": 1, "rows": ["..ooo..", ".oZcco.", ".ocZZo.", "occccco", "ocZcZco", ".ocZco.", ".occco.", "..ooo.."], "pivot": [3, 4.6]}, "egg_open": {"x0": 0, "y0": 2, "rows": [".o.o.o.", "oz.z.zo", "oZZZzZo", "oZzZZZo", ".oZZzo.", ".oZzZo.", "..ooo.."], "pivot": [3, 4.6]}, "name_tag": {"x0": 0, "y0": 0, "rows": ["...o...", "..o.o..", ".o...o.", "QQQQQQQ", "QLTLTLQ", "QLTTTLQ", "QLLTLLQ", "QQQQQQQ"], "pivot": [3, 0]}, "question": {"x0": 0, "y0": 0, "rows": [".TTT.", "TT.TT", "...TT", "..TT.", "..T..", ".....", "..T.."], "pivot": [2, 3]}, "cap_ethan": {"x0": 0, "y0": 0, "rows": ["QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXTXXTXXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXTXXXXXXTXXXXTTTTTTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTXXXXTTTXXXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXTTTTXXXXXXXTTXTTTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTXTTXTXTTXXXTXTXTTXXXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYTYYTYTTYTYTTYYYYYTYYYTTTTTTTYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXTTXTXTTXXXXXTTTTTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXTTXTXTTXXXXTTTXXTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTXTTXTXXTXXXTTTTXTTXTXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXTXTTXTXXTXXXTXTTTTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXTXTTXTTTTXXXXXTTTTXXTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXTXXTXTTTXXXXTXXXTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXTXTTTTTTXXXXTXXTTXTTXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXTXTTXTXTXXTTTXTXXTTXXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUUUUUUUXXXXXXXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUUUUUUUXXXXXUUXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXUUUUUUUUXUUUXXUUUUXXXXXXUUUUUXXXXXXUUUXXUUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXUUUUUUUUXUUUXUUUUUUXXXXUUUUUUUXXXXXUUUXUUUUUUXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUUUUUUXXXXXUUUXXXXUUUUXXXUUUUXXXUXXXXUUUXXXXUUUUXXXUUUUXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYUUUUUUUUYYYYYUUUYYYYUUUUYYYYUUUYYYYYYYYYUUYYYYUUUUYYYYUUUYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXXXUUUXXXXXUUUXXXXXXXXUUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXXXUUUXXXXXUUUXXXXUUUUUUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXXXUUUXXXXXUUUXXXUUUUXXUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXXXUUUXXXXXUUUXXUUXXXXXUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXXXUUUXXXXXUUUXXUUXXXXXUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUUXXXUUUXXXXXUUUXXUUUXXXUUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUUUUUUUUXXXXXUUUUUXUUUXXXXXUUUXXUUUUUUUUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXUUUUUUUUUXXXXXXUUUUXUUUXXXXXUUUXXXUUUUXXUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"], "pivot": [50, 22], "unit": 0.5}, "cap_ann": {"x0": 0, "y0": 0, "rows": ["QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXXXXXTXXTXTXXTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXXXXXTTTTTTTTXTTXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXTXXXXTTXXTTXXTXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTTTXTTXXTTXXXXTTXTTTTXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXTTXTTXXXXTTTXTTTTXTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYTYTTTTYYYYYYYTYTTTTYTYTTYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXTTTXXXXXXXTTTTTTTXTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXTTTXXXXXXTTTTTTTTXTXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXTXTTXXXXXTXTXXTTXXTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXTXXTTXXXXXXTXTTTTXTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXTXXXTTXXXXXTXTTTTXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXXTXXXXXTXXXXTXXTTXTTXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTXXXXXXXXTTTXXTTXTXXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUXXUUUXXXXXXUUUXXUUUUXXXXXUUUXXUUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXUUXXXXXXUUUXUUUUUUXXXXUUUXUUUUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXUUUXXXXXUUUUXXXUUUUXXXUUUUXXXUUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXUUUXXXXXUUUUXXXXUUUXXXUUUUXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYUUUYYYYYUUUYYYYUUUYYYYYUUUYYYUUUYYYYYUUUYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUUUUUUUUUUXXXXUUUXXXXXUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUUUUUUUUUUXXXXUUUXXXXXUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUXXXXXXXXUUUXXXUUUXXXXXUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXUUUXXXUUUXXXXXUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXUUUXXXUUUXXXXXUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXUUUXXXXXUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXUUUXXXXXUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"], "pivot": [50, 22], "unit": 0.5}, "cap_charlotte": {"x0": 0, "y0": 0, "rows": ["QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXTTTTTTTTTTXXXTTTTTTTTTTTTTXXXXXXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXXXXXXXXXXXTXTXTXXXTTXXXXXTTTTTTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTTTTTTTXXXXXTXTXTXXXTXXXXXXTXXTTXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXXXXXXXXXXTTTTTTXTTTTTTXXXTTTTTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTTTTTTTXXXXTXTTTTXTTXXTTXXXTXXTTXXTXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYTTYYYYYYYYYYYYTYTYTYTTTTTTYYYTYYTTYYTYYTYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTTTTTTTTTTTXXXTXTXTXTTXXTTXXXTTTTTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXTXXXTTXXXTTTTTTXTTTTTTXXXTXTTXXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXTXXTTXXXXXXXTXXXTTXXTTXXXTXTTTTXTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXTTTXXXXXXXXTXXXTTTTTTXXTTXTTXXXTXXXTXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXTXXTTXXXXXXXXTTTTXTXXXXXXTTXTTXTXTXXXTXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTXXXXTTXXXXXXTTTTXTTXTTXXXTXXTTTXXTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXXXXXTTXXTTTXXXXTXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXUUUUUUXXXXUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXUUUUUUUUXXXUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUXXXXXXXXXXXXXXXUUXXXXXUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXUUUXXXXXUXXXUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUXXXXXXXXXXXXXXXUUXXXXXUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXUUUXXXXXXXXXXUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUXXXXXXXXXXXXXXXUUXXXXXUUXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXUUUXXXXXXXXXXXUUXXUUUXXXXXXUUUUUXXXXXUUXUUUXXUUXXXXXUUUUUXXXUUUUUUXUUUUUUXXXXXUUUUXXXXXXXXQQ", "QQXXXXXXUUXXXXXXXXXXXXUUUUUUUUXXXXUUUUUUUXXXXUUUUUUXXUUXXXUUUUUUUUXXUUUUUUXUUUUUUXXXUUUUUUUXXXXXXXQQ", "QQXXXXXXUUXXXXXXXXXXXXUUUXXXUUUXXXUXXXXUUUXXXUUUXXXXXUUXXXUUXXXXUUUXXXUUXXXXXUUXXXXXUUXXXUUUXXXXXXQQ", "QQYYYYYYUUYYYYYYYYYYYYUUYYYYYUUYYYYYYYYYUUYYYUUYYYYYYUUYYUUYYYYYYUUYYYUUYYYYYUUYYYYUUYYYYYUUYYYYYYQQ", "QQXXXXXXUUXXXXXXXXXXXXUUXXXXXUUXXXXUUUUUUUXXXUUXXXXXXUUXXUUXXXXXXUUXXXUUXXXXXUUXXXXUUUUUUUUUXXXXXXQQ", "QQXXXXXXUUUXXXXXXXXXXXUUXXXXXUUXXXUUUXXXUUXXXUUXXXXXXUUXXUUXXXXXXUUXXXUUXXXXXUUXXXXUUUUUUUUUXXXXXXQQ", "QQXXXXXXXUUXXXXXXXXXXXUUXXXXXUUXXUUXXXXXUUXXXUUXXXXXXUUXXUUXXXXXXUUXXXUUXXXXXUUXXXXUUXXXXXXXXXXXXXQQ", "QQXXXXXXXUUUUXXXXUUXXXUUXXXXXUUXXUUUXXXUUUXXXUUXXXXXXUUXXUUUXXXXUUXXXXUUXXXXXUUXXXXUUUXXXXUXXXXXXXQQ", "QQXXXXXXXXUUUUUUUUUXXXUUXXXXXUUXXUUUUUUUUUXXXUUXXXXXXUUXXXUUUUUUUUXXXXUUUUXXXUUUUXXXUUUUUUUXXXXXXXQQ", "QQXXXXXXXXXXUUUUUUXXXXUUXXXXXUUXXXUUUUXXUUXXXUUXXXXXXUUXXXXUUUUUXXXXXXXUUUXXXXUUUXXXXUUUUUXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"], "pivot": [50, 22], "unit": 0.5}, "cap_allen": {"x0": 0, "y0": 0, "rows": ["QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXXXXXXXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXXXXXXXXTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXXXXXXTTTXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXXXXXXTTTTTTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTTTTTTTTTTTTXXXTTXXXTXXXXTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYTTTYYYYYYYYTTTTTTTTTTTYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXTXXXXXXXXXXXTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXTTXXXXXXXXTTTXTXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTXXXTXXXXXXTTXXTTTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXXTTXXXXXXXTTTXTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXXXXTTXXXXTTXXXTTTTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXXXXXXTTXXXXXTTTXXTXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXTTXXXXXXXXXXTXXTTTXXTTTXXXTTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXUUUXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUUUXXXXXXXUUUXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXUUUUUXXXXXXXUUUXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXUUXXXXXXXUUUXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXUUUXUUUXXXXXXUUUXXXUUUXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXUUXXUUUXXXXXXUUUXXXUUUXXXXXUUUUUXXXXXXUUUXXUUUUXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXUUXXXXXXUUUXXXUUUXXXXUUUUUUUUXXXXUUUXUUUUUUXXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXUUUXXXXXUUUXXXUUUXXXUUUUXXXUUXXXXUUUUXXXUUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYUUUYYYYUUUYYYYYUUUYYYUUUYYUUUUYYYYYUUYYYUUUUYYYYUUUYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXUUUXXXXUUUXXXUUUXXUUUXXXXXXUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXUUUUUUUUUUUUXXXXUUUXXXUUUXXUUUUUUUUUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXUUUUUUUUUUUUXXXXUUUXXXUUUXXUUUUUUUUUUUXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXUUXXXXXXXXUUUXXXUUUXXXUUUXXUUUXXXXXXXXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXUUUXXXUUUXXXUUUXXUUUUXXXXXXXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXUUUXXXUUUXXXUUUXXXUUUUXXXXUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXXXXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXUUUXXXUUUXXXXUUUUUUUUXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXXXXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXUUUXXXXXXXXXXUUUXXUUUXXXUUUXXXXXUUUUUUXXXXXUUUXXXXXUUUXXXXXXXXXXXXXXXXXQQXXQQ", "QQXXQQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQXXQQ", "QQYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYQQ", "QQXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"], "pivot": [50, 22], "unit": 0.5}};
+      const PAL = {"o": "#6B5A55", "w": "#F8F4ED", "s": "#DAD0C5", "p": "#F2A0A8", "e": "#6F8DBF", "k": "#2A2E3B", "h": "#FFFFFF", "n": "#E98C98", "b": "#F7B8BE", "r": "#C8202A", "d": "#8E1820", "l": "#E0414C", "g": "#2E6B3B", "G": "#6E4A33", "y": "#FFD36B", "c": "#F4ECDD", "m": "#8C6E52", "A": "#D9A86A", "B": "#C8955A", "C": "#6B4423", "K": "#4A2C17", "f": "#DCE3EA", "x": "#7A6A5E", "P": "#F6B7C8", "R": "#EFA0B6", "Q": "#D98AA0", "L": "#FCD9E3", "T": "#DE6A93", "U": "#5B98D6", "X": "#FFF6EA", "Y": "#F5E4D6", "V": "#BFDDF5", "F": "#D9B27C", "J": "#F1DDB8", "O": "#9C6B47", "I": "#F2CF7A", "N": "#C98A4B", "E": "#B9B4C2", "D": "#9E98AA", "Z": "#A8703F", "z": "#6B4226"};
+      /*END SPRITES*/
+
+      const DUR = 28;
+      // 讀邀請函段落：插在接到信之後（原 11.8 s 起走路），後面整段往後延 LETTER_DUR 秒
+      const LETTER_AT = 11.8;
+      const LETTER_DUR = 8.0;
+      let override = null;
+      const P = 15; // 一格 = 15 px
+      const GW = 128;
+      const GH = 72;
+      const out = document.getElementById("story-canvas");
+      const ctx = out.getContext("2d");
+      const world = document.createElement("canvas");
+      world.width = GW;
+      world.height = GH;
+      const g = world.getContext("2d");
+
+      // ---------- 零件轉成小畫布（1 格 = 1 px），另做一份投影 ----------
+      const SPR = {};
+      Object.keys(SPRITES).forEach((name) => {
+        const p = SPRITES[name];
+        const h = p.rows.length;
+        const w = p.rows[0].length;
+        const c = document.createElement("canvas");
+        const sh = document.createElement("canvas");
+        c.width = sh.width = w;
+        c.height = sh.height = h;
+        const x = c.getContext("2d");
+        const xs = sh.getContext("2d");
+        xs.fillStyle = "#000";
+        p.rows.forEach((row, j) => {
+          for (let i = 0; i < w; i++) {
+            const ch = row[i];
+            if (ch === ".") continue;
+            x.fillStyle = PAL[ch];
+            x.fillRect(i, j, 1, 1);
+            xs.fillRect(i, j, 1, 1);
+          }
+        });
+        const unit = p.unit || 1;
+        SPR[name] = { c, sh, w: w * unit, h: h * unit, x0: p.x0, y0: p.y0, px: p.pivot[0], py: p.pivot[1], unit };
+      });
+
+      // ---------- 數學工具 ----------
+      const E = {
+        lin: (p) => p,
+        io: (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2),
+        out: (p) => 1 - Math.pow(1 - p, 3),
+        in: (p) => p * p * p,
+        back: (p) => {
+          const c1 = 2.4;
+          return 1 + (c1 + 1) * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+        },
+      };
+      function tw(t, t0, t1, a, b, e) {
+        if (t <= t0) return a;
+        if (t >= t1) return b;
+        return a + (b - a) * E[e || "io"]((t - t0) / (t1 - t0));
+      }
+      function path(t, keys) {
+        if (t <= keys[0][0]) return keys[0][1];
+        for (let i = 1; i < keys.length; i++) {
+          if (t <= keys[i][0]) return tw(t, keys[i - 1][0], keys[i][0], keys[i - 1][1], keys[i][1], keys[i][2]);
+        }
+        return keys[keys.length - 1][1];
+      }
+      function hash(a, b, c) {
+        let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263) + Math.imul(c | 0, 1274126177)) | 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+      }
+      // 彈一下後停住（紙片被彈起的感覺）
+      function pop(t, t0, amp, dur) {
+        if (t < t0 || t > t0 + dur) return 0;
+        const u = (t - t0) / dur;
+        return amp * Math.sin(u * Math.PI * 2.5) * (1 - u);
+      }
+
+      // ---------- 紙片零件繪製（座標單位：格） ----------
+      // 以零件自己的關節對齊 (ax, ay)；預設對齊它在角色框中的關節位置
+      function piece(name, rot, opt) {
+        const s = SPR[name];
+        opt = opt || {};
+        const ax = opt.ax !== undefined ? opt.ax : s.px;
+        const ay = opt.ay !== undefined ? opt.ay : s.py;
+        ctx.save();
+        ctx.translate(ax + (opt.dx || 0), ay + (opt.dy || 0));
+        if (rot) ctx.rotate(rot);
+        const sc = opt.scale !== undefined ? opt.scale : 1;
+        ctx.scale(sc * (opt.sx !== undefined ? opt.sx : 1), sc);
+        const lx = s.unit === 1 ? s.x0 - s.px : -s.w / 2;
+        const ly = s.unit === 1 ? s.y0 - s.py : -s.h / 2;
+        ctx.globalAlpha = 0.28;
+        ctx.drawImage(s.sh, lx + 0.35, ly + 0.35, s.w, s.h);
+        ctx.globalAlpha = 1;
+        ctx.drawImage(s.c, lx, ly, s.w, s.h);
+        if (opt.after) opt.after();
+        ctx.restore();
+      }
+
+      // ---------- 小貓（紙娃娃） ----------
+      // st.x/st.y：角色框左上角在世界中的位置（格）
+      function drawCat(st) {
+        ctx.save();
+        ctx.translate(st.x, st.y - (st.hop || 0));
+        if (st.flip !== undefined && st.flip !== 1) {
+          ctx.translate(22, 0);
+          ctx.scale(st.flip, 1);
+          ctx.translate(-22, 0);
+        }
+        if (st.view === "front") {
+          piece("f_tail", st.tail || 0);
+          piece("f_body", 0);
+          if (st.front) st.front();
+          piece("paw", 0, { ax: st.pawL[0], ay: st.pawL[1] });
+          piece("paw", 0, { ax: st.pawR[0], ay: st.pawR[1] });
+          piece(st.head || "f_head_open", st.headRot || 0);
+        } else {
+          piece("s_leg_back", st.legB || 0);
+          piece("s_leg_front", st.legF || 0);
+          ctx.save();
+          ctx.translate(19, 28);
+          ctx.rotate(st.rock || 0);
+          ctx.translate(-19, -28);
+          piece("s_tail", st.tail || 0);
+          if (st.behind) st.behind();
+          piece(st.torso || "s_torso_flat", 0, { scale: st.torsoScale || 1 });
+          const hs = SPR[st.head || "s_head_open"];
+          piece(st.head || "s_head_open", st.headRot || 0, {
+            ax: 20,
+            ay: 16,
+            sx: st.headSx !== undefined ? st.headSx : 1,
+            dy: st.headDy || 0,
+          });
+          piece(st.arm || "s_arm", st.armRot || 0, { after: st.hold });
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      // ---------- 場景（畫在 128x72 的世界畫布上，1 格 = 1 px） ----------
+      function R(x, y, w, h, c) {
+        g.fillStyle = c;
+        g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+      }
+      function triW(cx, top, hw, bot, c) {
+        for (let y = top; y <= bot; y++) {
+          const w = Math.round(((y - top) / (bot - top)) * hw);
+          R(cx - w, y, w * 2 + 1, 1, c);
+        }
+      }
+      function snow(t, x0, y0, w, h, n, seed, sp) {
+        for (let i = 0; i < n; i++) {
+          const v = sp + hash(i, seed, 2) * 4;
+          const x = x0 + ((Math.floor(hash(i, seed, 1) * w + Math.sin(t * 1.2 + i) * 1.2) % w) + w) % w;
+          const y = y0 + Math.floor((hash(i, seed, 3) * h + t * v) % h);
+          R(x, y, 1, 1, "#FFFFFF");
+        }
+      }
+      function cloud(x, y, w) {
+        R(x + 2, y, w - 4, 1, "#FFFFFF");
+        R(x, y + 1, w, 2, "#FFFFFF");
+        R(x + 1, y + 3, w - 2, 1, "#EAF4FC");
+      }
+      function room(t) {
+        R(0, 0, GW, 52, "#5B3A2A");
+        for (let x = 0; x < GW; x += 8) R(x, 0, 1, 52, "#4E3124");
+        R(0, 40, GW, 1, "#4A2E21");
+        R(0, 52, GW, 20, "#8B5A3C");
+        for (let y = 56, k = 0; y < GH; y += 5, k++) {
+          R(0, y, GW, 1, "#7A4C31");
+          for (let x = (k % 2) * 13; x < GW; x += 26) R(x, y - 4, 1, 4, "#7A4C31");
+        }
+        R(0, 52, GW, 1, "#6B4430");
+        // 窗：白天藍天、雲慢慢飄、綠色小山
+        R(88, 6, 36, 34, "#6E4A33");
+        R(90, 8, 32, 30, "#BFDDF5");
+        g.save();
+        g.beginPath();
+        g.rect(90, 8, 32, 30);
+        g.clip();
+        cloud(92 + ((t * 1.5) % 40) - 10, 11, 9);
+        cloud(108 + ((t * 1.0) % 40) - 14, 16, 7);
+        triW(97, 26, 9, 38, "#A8D5A2");
+        triW(114, 28, 10, 38, "#93C98E");
+        g.restore();
+        R(105, 8, 1, 30, "#6E4A33");
+        R(90, 22, 32, 1, "#6E4A33");
+        R(86, 39, 40, 2, "#7C5439");
+        // 擺滿大餐的桌子（取代聖誕樹）
+        R(4, 46, 2, 7, "#6B4430");
+        R(38, 46, 2, 7, "#6B4430");
+        R(2, 38, 40, 9, "#FFFFFF");
+        for (let y = 38; y < 47; y += 2) for (let x = 2 + ((y / 2) % 2) * 2; x < 42; x += 4) R(x, y, 2, 2, "#F6B7C8");
+        R(2, 46, 40, 1, "#E79AB0");
+        // 烤雞
+        R(4, 36, 12, 2, "#FFFFFF");
+        R(5, 31, 10, 5, "#B86E2E");
+        R(6, 30, 8, 2, "#C8803A");
+        R(7, 31, 3, 1, "#E3A55A");
+        R(3, 33, 2, 1, "#FFFFFF");
+        R(15, 33, 2, 1, "#FFFFFF");
+        // 草莓蛋糕＋蠟燭
+        R(18, 37, 10, 1, "#FFFFFF");
+        R(19, 32, 8, 5, "#F6B7C8");
+        R(19, 34, 8, 1, "#FFFFFF");
+        R(19, 31, 8, 1, "#FFFFFF");
+        R(20, 30, 1, 1, "#E8475A");
+        R(23, 30, 1, 1, "#E8475A");
+        R(25, 30, 1, 1, "#E8475A");
+        R(22, 27, 1, 3, "#BFDDF5");
+        R(22, 26, 1, 1, hash(1, Math.floor(t * 6), 2) > 0.5 ? "#FFD36B" : "#FFB347");
+        // 水果盤
+        R(29, 36, 7, 2, "#BFDDF5");
+        R(30, 34, 2, 2, "#F5A33A");
+        R(32, 33, 2, 2, "#8CC56A");
+        R(34, 34, 1, 2, "#E8475A");
+        // 果汁
+        R(37, 32, 3, 6, "#FFFFFF");
+        R(37, 34, 3, 4, "#FCC9A5");
+        R(39, 30, 1, 3, "#6FA8DC");
+        // 包裝紙卷、緞帶卷（粉嫩色）
+        R(2, 58, 20, 5, "#B49A78");
+        R(2, 58, 20, 4, "#FFFFFF");
+        for (let i = 0; i < 6; i++) R(4 + i * 3, 59 + (i % 2), 1, 1, i % 2 ? "#6FA8DC" : "#E77FA3");
+        R(21, 58, 2, 4, "#F3ECE4");
+        R(108, 58, 8, 6, "#D98AA0");
+        R(109, 59, 6, 4, "#F6B7C8");
+        R(111, 60, 2, 2, "#FFF6EA");
+        R(100, 63, 8, 1, "#E77FA3");
+        R(96, 64, 4, 1, "#E77FA3");
+        R(30, 66, 3, 1, "#FFFFFF");
+        R(96, 68, 2, 1, "#BFDDF5");
+      }
+      function balloon(x, y, c, hi) {
+        R(x - 1, y - 3, 3, 1, c);
+        R(x - 2, y - 2, 5, 3, c);
+        R(x - 1, y + 1, 3, 1, c);
+        R(x, y + 2, 1, 1, c);
+        R(x - 1, y - 2, 1, 1, hi);
+      }
+      function shop(t, doorOpen) {
+        R(0, 0, GW, 30, "#BFDDF5");
+        R(0, 30, GW, 34, "#D7EBF8");
+        cloud(10 + ((t * 1.2) % 30), 1, 10);
+        R(2, 3, 124, 3, "#E79AB0");
+        R(4, 6, 120, 58, "#8A5236");
+        for (let y = 9; y < 62; y += 3) R(4, y, 120, 1, "#7A4730");
+        // 粉白遮雨棚
+        for (let i = 0; i < 20; i++) R(6 + i * 6, 4, 6, 5, i % 2 ? "#FFFFFF" : "#F6B7C8");
+        for (let i = 0; i < 20; i++) R(7 + i * 6, 9, 4, 1, i % 2 ? "#FFFFFF" : "#F6B7C8");
+        // 粉藍粉紅小三角旗
+        for (let i = 0; i < 28; i++) {
+          const c = i % 2 ? "#BFDDF5" : "#F6B7C8";
+          R(6 + i * 4, 11, 3, 1, c);
+          R(7 + i * 4, 12, 1, 1, c);
+        }
+        // 大窗：裡面飄著氣球
+        R(8, 24, 28, 26, "#5A3422");
+        R(9, 25, 26, 24, "#FFE9C7");
+        balloon(15, 31, "#F6B7C8", "#FFFFFF");
+        balloon(22, 29, "#BFDDF5", "#FFFFFF");
+        balloon(29, 32, "#F6B7C8", "#FFFFFF");
+        R(15, 34, 1, 10, "#C9B8A6");
+        R(22, 32, 1, 12, "#C9B8A6");
+        R(29, 35, 1, 9, "#C9B8A6");
+        R(9, 36, 26, 1, "#5A3422");
+        R(21, 25, 1, 24, "#5A3422");
+        R(7, 50, 30, 2, "#6B3E28");
+        R(7, 49, 30, 1, "#F6B7C8");
+        // 門
+        R(40, 26, 18, 38, "#4A2A1A");
+        R(42, 28, 14, 36, "#F3C77A");
+        R(42, 56, 14, 8, "#E0A85C");
+        const pw = Math.max(2, Math.round(14 * (1 - doorOpen * 0.85)));
+        R(42, 28, pw, 36, "#6B3A22");
+        if (pw > 8) {
+          R(44, 31, pw - 4, 8, "#FFE9C7");
+          const hx = 42 + Math.floor(pw / 2);
+          // 粉紅愛心吊牌
+          R(hx - 3, 42, 2, 1, "#E77FA3");
+          R(hx + 1, 42, 2, 1, "#E77FA3");
+          R(hx - 3, 43, 6, 2, "#E77FA3");
+          R(hx - 2, 45, 4, 1, "#E77FA3");
+          R(hx - 1, 46, 2, 1, "#E77FA3");
+          R(hx - 2, 43, 1, 1, "#FCD9E3");
+          R(42 + pw - 3, 47, 1, 3, "#FFD36B");
+        }
+        // 門邊的粉紅、粉藍氣球
+        balloon(37, 20 + Math.round(Math.sin(t * 2) * 0.6), "#F6B7C8", "#FFFFFF");
+        balloon(34, 23 + Math.round(Math.sin(t * 2 + 1) * 0.6), "#BFDDF5", "#FFFFFF");
+        R(37, 23, 1, 6, "#C9B8A6");
+        R(34, 26, 1, 3, "#C9B8A6");
+        R(34, 29, 5, 1, "#C9B8A6");
+        // 招牌支架
+        R(55, 10, 54, 1, "#3B2A1E");
+        R(55, 9, 1, 4, "#3B2A1E");
+        // 人行道
+        R(0, 64, GW, 8, "#D9CFC4");
+        for (let x = 0; x < GW; x += 10) R(x, 64, 1, 8, "#C4B8AA");
+        R(0, 67, GW, 1, "#C4B8AA");
+        R(4, 63, 120, 1, "#B9AC9D");
+        // 盆栽（取代小松樹）
+        R(114, 56, 9, 8, "#C47A54");
+        R(113, 55, 11, 2, "#A9643F");
+        R(115, 48, 7, 7, "#5E9E5A");
+        R(113, 50, 3, 4, "#4E8A4A");
+        R(121, 50, 3, 4, "#4E8A4A");
+        R(117, 46, 3, 3, "#6FB46A");
+        R(118, 50, 1, 1, "#F6B7C8");
+      }
+      function poof(cx, cy, p) {
+        if (p <= 0 || p >= 1) return;
+        const grow = Math.min(1, p / 0.4);
+        const fade = p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2 + hash(i, 3, 3);
+          const d = (5 + hash(i, 4, 4) * 8) * grow;
+          const r = Math.round((4 + hash(i, 5, 5) * 4) * fade);
+          if (r < 2) continue;
+          const x0 = Math.round(cx + Math.cos(a) * d * 1.2);
+          const y0 = Math.round(cy + Math.sin(a) * d);
+          for (let y = -r; y <= r; y++) {
+            for (let x = -r; x <= r; x++) {
+              const dd = x * x + y * y;
+              if (dd > r * r) continue;
+              ctx.fillStyle = dd > (r - 1) * (r - 1) ? "#C9C2D3" : "#FFFFFF";
+              ctx.fillRect(x0 + x, y0 + y, 1, 1);
+            }
+          }
+        }
+      }
+      function iris(cx, cy, r) {
+        ctx.fillStyle = "#1A1420";
+        for (let y = -2; y < GH + 2; y++) {
+          const dy = y + 0.5 - cy;
+          if (Math.abs(dy) >= r) {
+            ctx.fillRect(-2, y, GW + 4, 1);
+            continue;
+          }
+          const hw = Math.round(Math.sqrt(r * r - dy * dy));
+          ctx.fillRect(-2, y, Math.round(cx - hw) + 2, 1);
+          ctx.fillRect(Math.round(cx + hw), y, GW, 1);
+        }
+      }
+      function walkPose(st, ph, amp) {
+        st.legB = Math.sin(ph) * 0.45 * amp;
+        st.legF = -Math.sin(ph) * 0.45 * amp;
+        st.rock = Math.sin(ph * 2) * 0.04 * amp;
+        st.hop = Math.abs(Math.sin(ph)) * 1.2 * amp;
+        st.tail = Math.sin(ph) * 0.15;
+      }
+
+      // ---------- 時間軸 ----------
+      function render(realT) {
+        let t = realT;
+        let letterU = -1;
+        override = null;
+        if (realT >= LETTER_AT && realT < LETTER_AT + LETTER_DUR) {
+          t = LETTER_AT - 0.001;
+          letterU = realT - LETTER_AT;
+          override = { head: letterU > 7.65 ? "s_head_happy_bow" : "s_head_open_bow", armRot: -0.45 };
+          if (letterU > 7.65) override.hop = Math.max(0, Math.sin(((letterU - 7.65) / 0.3) * Math.PI)) * 1.5;
+        } else if (realT >= LETTER_AT + LETTER_DUR) {
+          t = realT - LETTER_DUR;
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = "#1A1420";
+        ctx.fillRect(0, 0, 1920, 1080);
+        let cam;
+        let draw;
+        if (t < 13) {
+          room(t);
+          cam = {
+            x: path(t, [
+              [0.8, 64],
+              [2.0, 64, "io"],
+              [4.4, 64],
+              [5.2, 64, "io"],
+              [6.2, 64],
+              [7.4, 62, "io"],
+              [9.8, 62],
+              [10.4, 64, "io"],
+              [11.8, 64],
+              [12.9, 70, "io"],
+            ]),
+            y: path(t, [
+              [0.8, 36],
+              [2.0, 46, "io"],
+              [4.4, 46],
+              [5.2, 40, "io"],
+              [6.2, 40],
+              [7.4, 46, "io"],
+              [9.8, 46],
+              [10.4, 36, "io"],
+            ]),
+            z: path(t, [
+              [0.8, 1],
+              [2.0, 1.3, "io"],
+              [4.4, 1.3],
+              [5.2, 1.1, "io"],
+              [6.2, 1.1],
+              [7.4, 1.35, "io"],
+              [9.8, 1.35],
+              [10.4, 1, "io"],
+              [11.8, 1],
+              [12.9, 1.1, "io"],
+            ]),
+          };
+          draw = () => drawRoomCat(t);
+        } else {
+          shop(t, tw(t, 13.3, 13.8, 0, 1, "out"));
+          cam = {
+            x: path(t, [
+              [13, 64],
+              [15.7, 64],
+              [16.4, 80, "io"],
+              [17.9, 80],
+              [18.9, 82, "io"],
+            ]),
+            y: path(t, [
+              [13, 36],
+              [15.7, 36],
+              [16.4, 35, "io"],
+              [17.9, 35],
+              [18.9, 22, "io"],
+            ]),
+            z: path(t, [
+              [13, 1],
+              [15.7, 1],
+              [16.4, 1.4, "io"],
+              [17.9, 1.4],
+              [18.9, 2, "io"],
+            ]),
+          };
+          draw = () => drawShopCat(t);
+        }
+        // 鏡頭：世界座標（格）→ 螢幕
+        const z = cam.z;
+        const vw = GW / z;
+        const vh = GH / z;
+        const cx = Math.min(GW - vw / 2, Math.max(vw / 2, cam.x));
+        const cy = Math.min(GH - vh / 2, Math.max(vh / 2, cam.y));
+        const k = P * z;
+        ctx.setTransform(k, 0, 0, k, -(cx - vw / 2) * k, -(cy - vh / 2) * k);
+        ctx.drawImage(world, 0, 0, GW, GH);
+        draw();
+        if (letterU >= 0) drawLetter(letterU);
+      }
+
+      // 邀請函：從信封裡長大飛到畫面中央 → 停住讓人讀 → 縮回信封
+      function drawLetter(u) {
+        const dim = tw(u, 0.1, 0.5, 0, 0.45) * tw(u, 7.2, 7.65, 1, 0);
+        ctx.fillStyle = "rgba(26, 20, 32, " + dim.toFixed(3) + ")";
+        ctx.fillRect(-2, -2, GW + 4, GH + 4);
+        const k = u < 7.2 ? tw(u, 0.15, 0.75, 0, 1, "out") : tw(u, 7.2, 7.65, 1, 0, "in");
+        if (k <= 0.01) return;
+        const ex = 65;
+        const ey = 46;
+        piece("letter", (1 - Math.min(1, k)) * -0.5 + pop(u, 0.75, 0.04, 0.6), {
+          ax: ex + (64 - ex) * Math.min(1, k),
+          ay: ey + (36 - ey) * Math.min(1, k),
+          scale: 0.06 + 0.94 * k,
+        });
+      }
+
+      function drawRoomCat(t) {
+        const st = { x: 42, y: 34, view: "front", tail: Math.sin(t * 2) * 0.12 };
+        // 正面：包禮物
+        const stage = t < 0.8 ? 0 : t < 2.8 ? 1 + Math.min(3, Math.floor((t - 0.8) / 0.5)) : t < 3.0 ? 4 : t < 3.85 ? 5 : 6;
+        const giftScale = 1 + pop(t, 3.85, 0.18, 0.5) + pop(t, 3.0, 0.08, 0.4);
+        const patL = t > 0.8 && t < 2.9 ? Math.max(0, Math.sin((t - 0.8) * Math.PI * 4)) : 0;
+        const patR = t > 0.8 && t < 2.9 ? Math.max(0, Math.sin((t - 0.8) * Math.PI * 4 + Math.PI)) : 0;
+        st.pawL = [15, 20 + patL * 1.5];
+        st.pawR = [29, 20 + patR * 1.5];
+        st.headRot = t < 2.9 ? Math.sin(t * 2.4) * 0.05 : 0;
+        if (t >= 4.2) {
+          st.head = "f_head_happy";
+          st.hop = t < 4.9 ? Math.max(0, Math.sin(((t - 4.3) / 0.5) * Math.PI)) * 5 : 0;
+          st.pawL = [13, 16];
+          st.pawR = [31, 16];
+        }
+        st.front = () => piece("gift" + stage, Math.sin(t * 9) * 0.04 * (t > 0.8 && t < 2.8 ? 1 : 0), {
+          ax: 22.5,
+          ay: 25,
+          scale: giftScale,
+        });
+        // 5.6 起翻面成側面
+        let flip = 1;
+        if (t >= 5.6 && t < 5.85) flip = tw(t, 5.6, 5.85, 1, 0, "in");
+        if (t >= 5.85) {
+          st.view = "side";
+          st.x = 40;
+          st.y = 33;
+          st.hop = 0;
+          flip = tw(t, 5.85, 6.1, 0, 1, "out");
+        }
+        st.flip = flip;
+        if (st.view === "side") {
+          st.torso = "s_torso_flat";
+          st.head = "s_head_open";
+          st.arm = "s_arm";
+          st.armRot = 0;
+          st.tail = Math.sin(t * 2) * 0.12;
+          // 偷看左右
+          if (t >= 6.2 && t < 6.9) st.headRot = t < 6.55 ? -0.18 : 0.12;
+          // 禮物位置：手前 → 舉高 → 塞進肚子
+          let gx = path(t, [
+            [6.8, 29],
+            [7.15, 28, "out"],
+            [7.55, 24.5, "in"],
+          ]);
+          let gy = path(t, [
+            [6.8, 22],
+            [7.15, 15, "back"],
+            [7.55, 24, "in"],
+          ]);
+          const gs = tw(t, 7.15, 7.55, 0.75, 0.45, "in");
+          st.armRot = path(t, [
+            [6.8, 0.1],
+            [7.15, -0.7, "back"],
+            [7.55, 0.35, "in"],
+          ]);
+          const giftDraw = () => piece("gift6", 0, { ax: gx, ay: gy, scale: gs });
+          if (t < 7.2) st.hold = null;
+          if (t < 7.3) st.behind = null;
+          if (t < 7.2) {
+            const old = st.arm;
+            st.afterArm = giftDraw;
+          } else if (t < 7.6) st.behind = giftDraw;
+          // 肚子鼓起
+          if (t >= 7.6) {
+            st.torso = "s_torso_belly";
+            st.torsoScale = 1 + pop(t, 7.6, 0.16, 0.6);
+            st.hop = pop(t, 7.6, 2, 0.6) > 0 ? pop(t, 7.6, 2, 0.6) : 0;
+            st.armRot = -0.25;
+          }
+          if (t >= 8.0 && t < 9.8) {
+            st.head = "s_head_happy";
+            st.armRot = -0.25 + Math.sin((t - 8.0) * Math.PI * 2.2) * 0.22;
+            st.headRot = Math.sin((t - 8.0) * 3) * 0.05;
+          }
+          // 換洋裝
+          if (t >= 10.45) {
+            st.torso = "s_torso_belly_dress";
+            st.arm = "s_arm_dress";
+            st.armRot = -0.2;
+            st.head = t < 10.75 ? "s_head_happy_bow" : "s_head_open_bow";
+            st.hop = t > 10.8 && t < 11.1 ? Math.sin(((t - 10.8) / 0.3) * Math.PI) * 2 : 0;
+          }
+          if (t >= 11.0 && t < 11.5) st.armRot = tw(t, 11.0, 11.4, -0.2, -0.7, "out");
+          if (t >= 11.5) {
+            st.armRot = tw(t, 11.5, 11.7, -0.7, -0.15, "out");
+            st.hold = () => piece("envelope", 0, { ax: 6.2, ay: 2.6, scale: 1 });
+          }
+          // 往右走
+          if (t >= 11.8) {
+            st.x = tw(t, 11.8, 12.95, 40, 74, "lin");
+            walkPose(st, (t - 11.8) * Math.PI * 3.2, 1);
+          }
+        }
+        if (override) {
+          st.head = override.head;
+          st.armRot = override.armRot;
+          st.hop = override.hop || 0;
+        }
+        // 側面時把禮物畫在手的後面（舉著）
+        if (st.afterArm) {
+          const holdFn = st.afterArm;
+          st.hold = null;
+          drawCat(st);
+          ctx.save();
+          ctx.translate(st.x, st.y - (st.hop || 0));
+          holdFn();
+          ctx.restore();
+        } else {
+          drawCat(st);
+        }
+        // 特效
+        if (t > 3.85 && t < 4.6) {
+          const u = tw(t, 3.85, 4.05, 0, 1, "back") * tw(t, 4.35, 4.6, 1, 0, "in");
+          piece("sparkle", 0, { ax: 54, ay: 44, scale: u });
+          piece("sparkle", 0, { ax: 74, ay: 48, scale: u * 0.8 });
+        }
+        if (t > 8.2 && t < 9.8) {
+          piece("heart", 0, { ax: 72, ay: 34 - (t - 8.2) * 2, scale: tw(t, 8.2, 8.4, 0, 1.4, "back") });
+          piece("heart", 0, { ax: 77, ay: 30 - (t - 8.55) * 2, scale: tw(t, 8.55, 8.75, 0, 1, "back") });
+        }
+        if (t >= 9.8 && t < 10.45) piece("hanger_dress", 0, { ax: 61, ay: tw(t, 9.8, 10.2, -16, 18, "out"), scale: 1.2 });
+        poof(61, 50, tw(t, 10.2, 10.8, 0, 1, "lin"));
+        if (t >= 11.0 && t < 11.5) {
+          const u = (t - 11.0) / 0.5;
+          piece("envelope", Math.sin(u * 8) * 0.3, { ax: 72 + Math.sin(u * 6) * 2, ay: 4 + (44 - 4) * E.out(u) });
+        }
+        if (t >= 12.35) iris(st.x + 22, 46, tw(t, 12.35, 12.9, 80, 0, "in"));
+      }
+
+      function drawShopCat(t) {
+        const st = { view: "side", x: 28, y: 31, torso: "s_torso_belly_dress", arm: "s_arm_dress", head: "s_head_open_bow" };
+        st.tail = Math.sin(t * 2) * 0.12;
+        st.armRot = -0.15;
+        st.hold = () => piece("envelope", 0, { ax: 6.2, ay: 2.6 });
+        // 招牌翻面
+        const flip = tw(t, 15.15, 15.6, 0, 1, "io");
+        const k = Math.cos(Math.PI * flip);
+        const bob = pop(t, 15.6, 1.2, 0.8);
+        const signY = 22 + bob;
+        const chainW = Math.max(1, 25 * Math.abs(k) - 4);
+        ctx.fillStyle = "#7E7468";
+        for (let y = 11; y < signY - 10; y += 1) {
+          if (y % 2) continue;
+          ctx.fillRect(82 - chainW, y, 1, 1);
+          ctx.fillRect(82 + chainW - 1, y, 1, 1);
+        }
+        piece(k >= 0 ? "sign_front" : "sign_back", 0, { ax: 82, ay: signY, sx: Math.max(0.04, Math.abs(k)) });
+        if (t < 13.55) {
+          // 還在門後
+        } else {
+          if (t < 14.7) {
+            st.x = tw(t, 13.55, 14.7, 28, 61, "lin");
+            walkPose(st, (t - 13.55) * Math.PI * 3.2, 1);
+          } else {
+            st.x = 61;
+          }
+          // 蹲 → 跳起來拍招牌 → 落地
+          if (t >= 14.7 && t < 16) {
+            st.hop = path(t, [
+              [14.7, 0],
+              [14.95, -1, "out"],
+              [15.3, 10, "out"],
+              [15.65, 0, "in"],
+              [15.8, -0.6, "out"],
+              [15.95, 0, "out"],
+            ]);
+            st.armRot = path(t, [
+              [14.7, -0.15],
+              [14.95, 0.2],
+              [15.25, -1.55, "out"],
+              [15.5, -1.55],
+              [15.9, -0.15, "io"],
+            ]);
+            st.legB = st.hop > 1 ? 0.35 : 0;
+            st.legF = st.hop > 1 ? -0.35 : 0;
+            st.headRot = st.hop > 1 ? -0.15 : 0;
+          }
+          // 轉頭看鏡頭 → 眨眼 → 轉回去
+          if (t >= 16.5 && t < 17.85) {
+            const turnIn = tw(t, 16.5, 16.62, 1, 0, "in");
+            const turnOut = tw(t, 17.7, 17.82, 1, 0, "in");
+            if (t < 16.62) {
+              st.headSx = turnIn;
+            } else if (t < 17.7) {
+              st.head = t >= 17.0 && t < 17.6 ? "f_head_wink_bow" : "f_head_open_bow";
+              st.headSx = tw(t, 16.62, 16.75, 0, 1, "out");
+              st.headRot = t >= 17.0 && t < 17.6 ? 0.08 : 0;
+            } else {
+              st.head = "f_head_open_bow";
+              st.headSx = turnOut;
+            }
+          }
+          // 走出畫面
+          if (t >= 17.85) {
+            st.x = tw(t, 17.85, 19.0, 61, 128, "in");
+            walkPose(st, (t - 17.85) * Math.PI * 3.6, 1);
+          }
+          drawCat(st);
+          if (t >= 17.0 && t < 17.65) {
+            const u = tw(t, 17.0, 17.12, 0, 1.6, "back") * tw(t, 17.45, 17.65, 1, 0, "in");
+            piece("sparkle", 0, { ax: st.x + 36, ay: st.y + 4, scale: u });
+          }
+        }
+        if (t < 13.5) iris(49, 44, tw(t, 13.05, 13.5, 0, 90, "out"));
+      }
+
+      const state = { t: 0 };
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo(
+        state,
+        { t: 0 },
+        { t: DUR, duration: DUR, ease: "none", onUpdate: () => render(state.t) },
+        0,
+      );
+      render(0);
+      window.__timelines = window.__timelines || {};
+      window.__timelines["story"] = tl;
+    })();
+  </script>
+</template>

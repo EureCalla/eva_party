@@ -708,27 +708,31 @@
     if (e.target === rulesEl) rulesEl.hidden = true;
   });
 
-  // ---------- 預告片（trailer.js 的 render(t) 逐格畫在 canvas 上） ----------
+  // ---------- 預告片（各集的 render(t) 逐格畫在 canvas 上；集數由 trailer.js 等檔登記到 window.EPISODES） ----------
   const trailerEl = document.getElementById("trailer");
   const playBtn = document.getElementById("trailer-play");
   const seekEl = document.getElementById("trailer-seek");
   const timeEl = document.getElementById("trailer-time");
-  const DUR = window.TRAILER.duration;
+  const episodeListEl = document.getElementById("episode-list");
+  const episodes = (window.EPISODES || []).slice().sort((a, b) => a.no - b.no);
+  let episode = episodes[0];
+  let DUR = episode.duration;
   let trailerT = 0;
   let playing = false;
   let lastMs = null;
 
   function showTrailerFrame() {
-    window.TRAILER.render(trailerT);
+    episode.render(trailerT);
     seekEl.value = trailerT;
     const s = Math.floor(trailerT);
     timeEl.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
   }
   function setPlaying(v) {
+    const was = playing;
     playing = v;
     playBtn.textContent = v ? "暫停" : trailerT >= DUR ? "重播" : "播放";
     lastMs = null;
-    if (v) requestAnimationFrame(trailerFrame);
+    if (v && !was) requestAnimationFrame(trailerFrame); // 播放中換集不要多開一條迴圈
   }
   function trailerFrame(ms) {
     if (!playing || trailerEl.hidden) return;
@@ -742,11 +746,28 @@
     setPlaying(false);
     trailerEl.hidden = true;
   }
-  document.getElementById("trailer-btn").addEventListener("click", () => {
+  // 切到某一集並從頭播放
+  function playEpisode(ep) {
+    episode = ep;
+    DUR = ep.duration;
+    seekEl.max = DUR;
+    for (const btn of episodeListEl.children) btn.classList.toggle("current", btn.dataset.no === String(ep.no));
     trailerT = 0;
-    trailerEl.hidden = false;
     showTrailerFrame();
     setPlaying(true);
+  }
+  for (const ep of episodes) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pixel-btn small episode-btn";
+    btn.dataset.no = ep.no;
+    btn.textContent = ep.title;
+    btn.addEventListener("click", () => playEpisode(ep));
+    episodeListEl.appendChild(btn);
+  }
+  document.getElementById("trailer-btn").addEventListener("click", () => {
+    trailerEl.hidden = false;
+    playEpisode(episodes[0]);
   });
   playBtn.addEventListener("click", () => {
     if (!playing && trailerT >= DUR) trailerT = 0;

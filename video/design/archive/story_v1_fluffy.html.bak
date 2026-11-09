@@ -1,0 +1,985 @@
+<template>
+  <style>
+    #root {
+      position: absolute;
+      inset: 0;
+      background: #1a1420;
+    }
+    #story-canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+    }
+  </style>
+  <div id="root" data-composition-id="story" data-width="1920" data-height="1080" data-duration="20">
+    <canvas id="story-canvas" width="1920" height="1080" data-layout-allow-overflow></canvas>
+  </div>
+  <script>
+    (function () {
+      // 招牌文字：要改日期或標題就改這兩行
+      const SIGN_LINE1 = "11/27";
+      const SIGN_LINE2 = "聖誕派對";
+      const SIGN_FRONT = "準備中";
+
+      const DUR = 20;
+      const W = 480;
+      const H = 270;
+      const world = document.createElement("canvas");
+      world.width = W;
+      world.height = H;
+      const g = world.getContext("2d");
+      const out = document.getElementById("story-canvas");
+      const o = out.getContext("2d");
+
+      // ---------- 基本工具 ----------
+      const E = {
+        lin: (p) => p,
+        io: (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2),
+        out: (p) => 1 - Math.pow(1 - p, 3),
+        in: (p) => p * p * p,
+        back: (p) => {
+          const c1 = 2.2;
+          const c3 = c1 + 1;
+          return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+        },
+        spring: (p) => (p >= 1 ? 1 : 1 - Math.exp(-5 * p) * Math.cos(11 * p)),
+      };
+      function tw(t, t0, t1, a, b, e) {
+        if (t <= t0) return a;
+        if (t >= t1) return b;
+        return a + (b - a) * E[e || "io"]((t - t0) / (t1 - t0));
+      }
+      function path(t, keys) {
+        if (t <= keys[0][0]) return keys[0][1];
+        for (let i = 1; i < keys.length; i++) {
+          if (t <= keys[i][0]) return tw(t, keys[i - 1][0], keys[i][0], keys[i - 1][1], keys[i][1], keys[i][2]);
+        }
+        return keys[keys.length - 1][1];
+      }
+      function hash(a, b, c) {
+        let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263) + Math.imul(c | 0, 1274126177)) | 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        h = h ^ (h >>> 16);
+        return (h >>> 0) / 4294967296;
+      }
+      function rect(x, y, w, h, c) {
+        g.fillStyle = c;
+        g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+      }
+      // 逐列填色的橢圓；fl>0 時左右邊緣加隨機毛邊
+      function ell(cx, cy, rx, ry, c, fl, seed, yMin, yMax) {
+        g.fillStyle = c;
+        cx = Math.round(cx);
+        cy = Math.round(cy);
+        const R = Math.ceil(ry);
+        for (let dy = -R; dy <= R; dy++) {
+          const k = 1 - (dy * dy) / (ry * ry);
+          if (k < 0) continue;
+          const y = cy + dy;
+          if (yMin !== undefined && y < yMin) continue;
+          if (yMax !== undefined && y > yMax) continue;
+          const hw = rx * Math.sqrt(k);
+          let l = hw;
+          let r = hw;
+          if (fl) {
+            l += Math.floor(hash(dy, seed, 11) * (fl + 1));
+            r += Math.floor(hash(dy, seed, 29) * (fl + 1));
+          }
+          l = Math.round(l);
+          r = Math.round(r);
+          g.fillRect(cx - l, y, l + r + 1, 1);
+        }
+      }
+      // 毛茸茸的形狀：先畫 1px 描邊再畫填色，同一個種子讓毛邊對齊
+      function fur(cx, cy, rx, ry, fill, seed, fl) {
+        ell(cx, cy, rx + 1, ry + 1, C.line, fl, seed);
+        ell(cx, cy, rx, ry, fill, fl, seed);
+      }
+      function tri(ax, ay, bx, by, cx, cy, c) {
+        g.fillStyle = c;
+        const x0 = Math.floor(Math.min(ax, bx, cx));
+        const x1 = Math.ceil(Math.max(ax, bx, cx));
+        const y0 = Math.floor(Math.min(ay, by, cy));
+        const y1 = Math.ceil(Math.max(ay, by, cy));
+        const d = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+        for (let y = y0; y <= y1; y++) {
+          for (let x = x0; x <= x1; x++) {
+            const w1 = ((bx - ax) * (y - ay) - (by - ay) * (x - ax)) / d;
+            const w2 = ((cx - bx) * (y - by) - (cy - by) * (x - bx)) / d;
+            const w3 = ((ax - cx) * (y - cy) - (ay - cy) * (x - cx)) / d;
+            if (w1 >= 0 && w2 >= 0 && w3 >= 0) g.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+      function line(x0, y0, x1, y1, c) {
+        g.fillStyle = c;
+        x0 = Math.round(x0);
+        y0 = Math.round(y0);
+        x1 = Math.round(x1);
+        y1 = Math.round(y1);
+        const dx = Math.abs(x1 - x0);
+        const dy = -Math.abs(y1 - y0);
+        const sx = x0 < x1 ? 1 : -1;
+        const sy = y0 < y1 ? 1 : -1;
+        let err = dx + dy;
+        for (let i = 0; i < 400; i++) {
+          g.fillRect(x0, y0, 1, 1);
+          if (x0 === x1 && y0 === y1) break;
+          const e2 = 2 * err;
+          if (e2 >= dy) {
+            err += dy;
+            x0 += sx;
+          }
+          if (e2 <= dx) {
+            err += dx;
+            y0 += sy;
+          }
+        }
+      }
+
+      const C = {
+        fur: "#F3EDE5",
+        belly: "#FFFFFF",
+        shade: "#DDD3C8",
+        line: "#9A897D",
+        pink: "#F4A9AE",
+        eye: "#7891B5",
+        eyeRim: "#3B3F52",
+        pupil: "#262A36",
+        nose: "#E98C98",
+        whisker: "#CFC6BD",
+        blush: "#F7B8BE",
+        red: "#C8202A",
+        redDark: "#93161F",
+        redLight: "#E0414C",
+        green: "#2E6B3B",
+        greenDark: "#1F4D2A",
+        paper: "#F4ECDD",
+        foam: "#DCE3EA",
+        gold: "#FFD36B",
+        night: "#1A1420",
+      };
+
+      // ---------- 招牌貼圖（啟動時畫一次，文字二值化成像素字） ----------
+      const SW = 120;
+      const SH = 58;
+      function makeSign(lines) {
+        const c = document.createElement("canvas");
+        c.width = SW;
+        c.height = SH;
+        const x = c.getContext("2d");
+        x.fillStyle = "#6B4423";
+        x.fillRect(0, 0, SW, SH);
+        x.fillStyle = "#D9A86A";
+        x.fillRect(2, 2, SW - 4, SH - 4);
+        x.fillStyle = "#C8955A";
+        for (let y = 12; y < SH - 2; y += 12) x.fillRect(2, y, SW - 4, 1);
+        x.fillStyle = "#6B4423";
+        [
+          [5, 5],
+          [SW - 7, 5],
+          [5, SH - 7],
+          [SW - 7, SH - 7],
+        ].forEach(([a, b]) => x.fillRect(a, b, 2, 2));
+        const tc = document.createElement("canvas");
+        tc.width = SW;
+        tc.height = SH;
+        const tx = tc.getContext("2d");
+        tx.textAlign = "center";
+        tx.textBaseline = "middle";
+        lines.forEach((ln) => {
+          tx.font = "bold " + ln.size + 'px "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+          tx.fillStyle = "#000";
+          tx.fillText(ln.text, SW / 2, ln.y);
+        });
+        const td = tx.getImageData(0, 0, SW, SH).data;
+        lines.forEach((ln) => {
+          x.fillStyle = ln.color;
+          const top = ln.y - ln.size / 2 - 2;
+          const bot = ln.y + ln.size / 2 + 2;
+          for (let yy = Math.max(0, Math.floor(top)); yy < Math.min(SH, Math.ceil(bot)); yy++) {
+            for (let xx = 0; xx < SW; xx++) {
+              if (td[(yy * SW + xx) * 4 + 3] > 110) x.fillRect(xx, yy, 1, 1);
+            }
+          }
+        });
+        return c;
+      }
+      const signFront = makeSign([{ text: SIGN_FRONT, size: 22, y: 29, color: "#4A2C17" }]);
+      const signBack = makeSign([
+        { text: SIGN_LINE1, size: 17, y: 17, color: "#1F5130" },
+        { text: SIGN_LINE2, size: 21, y: 40, color: "#B3202A" },
+      ]);
+
+      // ---------- 小道具 ----------
+      function sparkle(x, y, k, c) {
+        if (k <= 0) return;
+        const r = Math.round(4 * k);
+        rect(x - r, y, r * 2 + 1, 1, c || "#FFE7A3");
+        rect(x, y - r, 1, r * 2 + 1, c || "#FFE7A3");
+        if (r > 2) {
+          rect(x - 1, y - 1, 3, 3, "#FFE7A3");
+          rect(x, y, 1, 1, "#FFFFFF");
+        }
+      }
+      const HEART = ["0110110", "1111111", "1111111", "0111110", "0011100", "0001000"];
+      function heart(x, y, k) {
+        if (k <= 0) return;
+        const s = Math.max(1, Math.round(k));
+        HEART.forEach((row, j) => {
+          for (let i = 0; i < row.length; i++) {
+            if (row[i] === "1") rect(x + (i - 3) * s, y + (j - 3) * s, s, s, "#E8475A");
+          }
+        });
+        rect(x - 2 * s, y - 2 * s, s, s, "#FFB3BC");
+      }
+      function envelope(x, y, k) {
+        k = k || 1;
+        const w = Math.round(18 * k);
+        const h = Math.round(12 * k);
+        const x0 = Math.round(x - w / 2);
+        const y0 = Math.round(y - h / 2);
+        rect(x0 - 1, y0 - 1, w + 2, h + 2, "#8C6E52");
+        rect(x0, y0, w, h, "#F6EEDC");
+        line(x0, y0, x0 + w / 2, y0 + h * 0.55, "#C9B38F");
+        line(x0 + w - 1, y0, x0 + w / 2, y0 + h * 0.55, "#C9B38F");
+        heart(Math.round(x0 + w / 2), Math.round(y0 + h * 0.58), 1);
+      }
+      function gift(cx, cy, r, wrap, rv, rh, bow) {
+        cx = Math.round(cx);
+        cy = Math.round(cy);
+        ell(cx, cy, r + 1, r + 1, "#6F5A4B");
+        ell(cx, cy, r, r, C.foam);
+        // 包裝紙由左往右包上
+        if (wrap > 0) {
+          g.fillStyle = C.paper;
+          for (let dy = -r; dy <= r; dy++) {
+            const hw = Math.round(Math.sqrt(Math.max(0, r * r - dy * dy)));
+            const w = Math.round(2 * hw * wrap + (wrap > 0 && wrap < 1 ? Math.sin(dy * 0.7) * 1.5 : 0));
+            if (w > 0) g.fillRect(cx - hw, cy + dy, Math.min(w, 2 * hw + 1), 1);
+          }
+          // 冬青花樣
+          for (let j = -r; j <= r; j += 5) {
+            for (let i = -r; i <= r; i += 6) {
+              const ox = i + ((j / 5) % 2 ? 3 : 0);
+              if (ox * ox + j * j > (r - 3) * (r - 3)) continue;
+              if (cx + ox > cx - r + 2 * r * wrap - 2) continue;
+              const v = hash(i, j, 5);
+              if (v < 0.42) {
+                rect(cx + ox, cy + j, 3, 2, C.green);
+                rect(cx + ox + 1, cy + j + 2, 1, 1, C.greenDark);
+              } else if (v < 0.72) {
+                rect(cx + ox, cy + j, 1, 1, C.red);
+                rect(cx + ox + 2, cy + j + 1, 1, 1, C.red);
+              }
+            }
+          }
+        }
+        // 右下暗面
+        g.fillStyle = "rgba(90,60,40,0.18)";
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (dx * dx + dy * dy > r * r) continue;
+            const ax = dx + r * 0.4;
+            const ay = dy + r * 0.4;
+            if (ax * ax + ay * ay > r * r * 1.25) g.fillRect(cx + dx, cy + dy, 1, 1);
+          }
+        }
+        // 緞帶
+        const bw = Math.max(3, Math.round(r / 5));
+        if (rv > 0) {
+          const y1 = cy - r + 2 * r * rv;
+          for (let y = cy - r; y <= y1; y++) {
+            const dy = y - cy;
+            if (Math.abs(dy) > r) continue;
+            rect(cx - Math.floor(bw / 2), y, bw, 1, C.red);
+          }
+        }
+        if (rh > 0) {
+          for (let dx = -r; dx <= -r + 2 * r * rh; dx++) {
+            const hh = Math.sqrt(Math.max(0, r * r - dx * dx));
+            if (hh < bw / 2) continue;
+            rect(cx + dx, cy - Math.floor(bw / 2), 1, bw, C.red);
+          }
+        }
+        if (bow > 0) {
+          const k = bow;
+          const by = cy - r - 2;
+          ell(cx - 6 * k, by - 2 * k, 6 * k, 4 * k, C.redDark);
+          ell(cx + 6 * k, by - 2 * k, 6 * k, 4 * k, C.redDark);
+          ell(cx - 6 * k, by - 2 * k, 5 * k, 3 * k, C.red);
+          ell(cx + 6 * k, by - 2 * k, 5 * k, 3 * k, C.red);
+          rect(cx - 2 * k, by - 4 * k, 4 * k, 4 * k, C.redDark);
+          rect(cx - 7 * k, by - 4 * k, 2, 1, C.redLight);
+          rect(cx + 5 * k, by - 4 * k, 2, 1, C.redLight);
+        }
+      }
+      function dressItem(x, y) {
+        // 掛在衣架上的洋裝
+        line(x, y - 22, x, y - 16, "#7A6A5E");
+        line(x - 14, y - 8, x, y - 16, "#7A6A5E");
+        line(x + 14, y - 8, x, y - 16, "#7A6A5E");
+        rect(x - 14, y - 8, 29, 1, "#7A6A5E");
+        rect(x - 7, y - 8, 15, 10, C.red);
+        rect(x - 7, y - 2, 15, 2, C.green);
+        for (let j = 0; j < 16; j++) rect(x - 8 - j * 0.5, y + 2 + j, 17 + j, 1, j < 1 ? C.redDark : C.red);
+        for (let i = -15; i <= 15; i += 3) ell(x + i, y + 19, 2, 2, "#FFFFFF");
+      }
+      function poof(x, y, p) {
+        // p: 0→1 煙霧膨脹後消散
+        if (p <= 0 || p >= 1) return;
+        const grow = Math.min(1, p / 0.45);
+        const fade = p < 0.55 ? 1 : 1 - (p - 0.55) / 0.45;
+        for (let i = 0; i < 14; i++) {
+          const a = (i / 14) * Math.PI * 2 + hash(i, 3, 3);
+          const d = (18 + hash(i, 4, 4) * 26) * grow;
+          const r = (10 + hash(i, 5, 5) * 12) * fade * (0.6 + grow * 0.4);
+          if (r < 4) continue;
+          ell(x + Math.cos(a) * d * 1.1, y + Math.sin(a) * d * 0.9, r + 1, r + 1, "#D8D2E0");
+          ell(x + Math.cos(a) * d * 1.1, y + Math.sin(a) * d * 0.9, r, r, "#FFFFFF");
+        }
+        if (fade > 0.2) ell(x, y, 30 * grow * fade, 34 * grow * fade, "#FFFFFF");
+      }
+
+      // ---------- 小貓 rig ----------
+      function eye(ex, ey, state, s, lx, ly) {
+        ex = Math.round(ex);
+        ey = Math.round(ey);
+        if (state === "open") {
+          ell(ex, ey, 4.5 * s + 1, 5.5 * s + 1, C.eyeRim);
+          ell(ex, ey, 4.5 * s, 5.5 * s, C.eye);
+          ell(ex + lx * 1.5 * s, ey + ly * 1.2 * s, 2.4 * s, 4 * s, C.pupil);
+          rect(ex - 2 * s + lx * s, ey - 3.5 * s + ly * s, Math.max(2, 2 * s), Math.max(2, 2 * s), "#FFFFFF");
+          rect(ex + 1.5 * s + lx * s, ey + 1.5 * s, 1, 1, "#FFFFFF");
+        } else {
+          const r = Math.round(5 * s);
+          for (let dx = -r; dx <= r; dx++) {
+            const v = Math.sqrt(Math.max(0, r * r - dx * dx)) * 0.55;
+            // happy / wink：向上的彎弧 ^ ；closed：向下的彎弧 ‿
+            const y = state === "closed" ? ey + Math.round(v) - 2 : ey - Math.round(v) + 2;
+            rect(ex + dx, y, 1, 2, C.eyeRim);
+          }
+        }
+      }
+      function limb(ax, ay, bx, by, r) {
+        const n = Math.max(2, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
+        for (let i = 0; i <= n; i++) {
+          const u = i / n;
+          ell(ax + (bx - ax) * u, ay + (by - ay) * u, r + 1, r + 1, C.line);
+        }
+        for (let i = 0; i <= n; i++) {
+          const u = i / n;
+          ell(ax + (bx - ax) * u, ay + (by - ay) * u, r, r, C.fur);
+        }
+      }
+      function paw(x, y, s, seed) {
+        fur(x, y, 6 * s, 5 * s, C.fur, seed, 1);
+        rect(x - 2 * s, y + 1 * s, 1, 2 * s, C.shade);
+        rect(x + 2 * s, y + 1 * s, 1, 2 * s, C.shade);
+      }
+      function cat(p) {
+        const s = p.s;
+        const sq = p.sq || 1;
+        const x = p.x;
+        const gy = p.y - (p.hop || 0);
+        const seed = p.seed || 0;
+        const bl = p.belly || 0;
+        const face = p.face || 0;
+        const dir = face >= 0 ? 1 : -1;
+        const brx = (24 + 9 * bl) * s * (2 - sq);
+        const bry = (26 + 3 * bl) * s * sq;
+        const byc = gy - bry;
+
+        // 尾巴
+        const tdir = p.walk !== undefined ? -dir : 1;
+        const tp = p.tail || 0;
+        for (let pass = 0; pass < 2; pass++) {
+          for (let i = 0; i <= 14; i++) {
+            const u = i / 14;
+            const tx = x + tdir * (brx * 0.75 + 22 * u * s);
+            const ty = gy - (4 + 34 * u * u) * s + Math.sin(tp + u * 3) * 4 * s * u;
+            const r = (5.5 - 2 * u) * s;
+            ell(tx, ty, r + (pass ? 0 : 1), r + (pass ? 0 : 1), pass ? C.fur : C.line);
+          }
+        }
+        // 後腿（坐姿）或腳（走路）
+        if (p.walk === undefined) {
+          fur(x - brx * 0.72, gy - 9 * s, 11 * s, 9 * s, C.fur, seed + 1, 1);
+          fur(x + brx * 0.72, gy - 9 * s, 11 * s, 9 * s, C.fur, seed + 2, 1);
+        } else {
+          const ph = p.walk * Math.PI * 2;
+          fur(x - 9 * s, gy - 4 * s - Math.max(0, Math.sin(ph)) * 4 * s, 7 * s, 5 * s, C.fur, seed + 1, 1);
+          fur(x + 9 * s, gy - 4 * s - Math.max(0, -Math.sin(ph)) * 4 * s, 7 * s, 5 * s, C.fur, seed + 2, 1);
+        }
+        // 身體
+        fur(x, byc, brx, bry, C.fur, seed + 3, 2);
+        if (bl > 0.05) {
+          // 鼓起的圓肚子：有描邊、下緣陰影與高光，讀起來是一顆球
+          const mx = x + face * 3 * s;
+          const my = byc + (4 + 3 * bl) * s;
+          const mrx = (14 + 14 * bl) * s;
+          const mry = (16 + 10 * bl) * s;
+          ell(mx, my, mrx + 1, mry + 1, C.line, 1, seed + 40);
+          ell(mx, my, mrx, mry, C.belly, 1, seed + 40);
+          ell(mx + 3 * s, my + 4 * s, mrx, mry, C.shade, 0, 0, my + mry * 0.45);
+          ell(mx - mrx * 0.45, my - mry * 0.4, 4 * s, 3 * s, "#FFFFFF");
+          ell(mx + mrx * 0.15, my - mry * 0.1, mrx * 0.75, mry * 0.7, C.belly);
+          rect(mx - mrx * 0.5, my - mry * 0.45, 3 * s, 2 * s, "#EAF1FA");
+        } else {
+          ell(x + face * 3 * s, byc + 3 * s, 14 * s, 16 * s, C.belly);
+        }
+        // 肚子裡的禮物（被毛吞掉的過程）
+        if (p.inner) p.inner(x, byc);
+        // 洋裝
+        if (p.dress) {
+          const top = byc - bry * 0.5;
+          ell(x, byc, brx + 1, bry + 1, C.redDark, 0, 0, top);
+          ell(x, byc, brx, bry, C.red, 0, 0, top + 1);
+          const y0 = byc + bry * 0.25;
+          for (let y = Math.round(y0); y <= gy; y++) {
+            const u = (y - y0) / (gy - y0);
+            const hw = brx * (0.92 + 0.32 * u);
+            rect(x - hw - 1, y, hw * 2 + 3, 1, C.redDark);
+            rect(x - hw, y, hw * 2 + 1, 1, C.red);
+          }
+          const hw = brx * 1.24;
+          for (let i = -hw; i <= hw; i += 4 * s) ell(x + i, gy, 2.5 * s, 2.5 * s, "#FFFFFF");
+          rect(x - brx * 0.9, top + 2 * s, brx * 1.8, 3 * s, C.green);
+          ell(x - 4 * s, top + 3 * s, 3 * s, 2 * s, C.greenDark);
+          ell(x + 4 * s, top + 3 * s, 3 * s, 2 * s, C.greenDark);
+          rect(x - 1 * s, top + 2 * s, 2 * s, 3 * s, C.gold);
+          if (bl > 0.05) {
+            const mx = x + face * 3 * s;
+            const my = byc + (4 + 3 * bl) * s;
+            const mrx = (14 + 14 * bl) * s;
+            const mry = (16 + 10 * bl) * s;
+            ell(mx, my, mrx + 1, mry + 1, C.redDark, 0, 0, top + 1);
+            ell(mx, my, mrx, mry, C.red, 0, 0, top + 1);
+            ell(mx - mrx * 0.4, my - mry * 0.35, 4 * s, 5 * s, C.redLight);
+          }
+          if (p.dressHi) ell(x - brx * 0.4, byc + bry * 0.3, 2 * s, 3 * s, C.redLight);
+        }
+        // 前景道具（手前面）
+        if (p.front) p.front(x, byc);
+        // 手臂與手掌
+        const shL = [x - 15 * s, byc - 14 * s * sq];
+        const shR = [x + 15 * s, byc - 14 * s * sq];
+        const pl = p.pawL || [x - 11 * s, gy - 5 * s];
+        const pr = p.pawR || [x + 11 * s, gy - 5 * s];
+        limb(shL[0], shL[1], pl[0], pl[1], 4.5 * s);
+        limb(shR[0], shR[1], pr[0], pr[1], 4.5 * s);
+        if (p.dress) {
+          ell(shL[0], shL[1], 6 * s, 4 * s, C.red);
+          ell(shR[0], shR[1], 6 * s, 4 * s, C.red);
+        }
+        paw(pl[0], pl[1], s, seed + 5);
+        paw(pr[0], pr[1], s, seed + 6);
+        if (p.hold) p.hold(pl, pr);
+
+        // 頭
+        const hx = x + face * 4 * s + (p.headX || 0);
+        const hy = byc - 34 * s + (p.headY || 0);
+        const ef = face * 2 * s;
+        // 耳朵
+        [-1, 1].forEach((sd) => {
+          const ax = hx + sd * 27 * s + ef;
+          const bx2 = hx + sd * 7 * s + ef;
+          const tx = hx + sd * 22 * s + ef + (p.earTwitch && sd === 1 ? 2 * s : 0);
+          const ty = hy - 42 * s;
+          tri(ax + sd, hy - 8 * s, bx2 - sd, hy - 24 * s, tx + sd * 0.5, ty - 1.5, C.line);
+          tri(ax, hy - 8 * s, bx2, hy - 23 * s, tx, ty, C.fur);
+          tri(ax - sd * 5 * s, hy - 12 * s, bx2 + sd * 3 * s, hy - 22 * s, tx - sd * 1 * s, ty + 9 * s, C.pink);
+        });
+        // 臉頰毛
+        fur(hx - 23 * s, hy + 8 * s, 10 * s, 9 * s, C.fur, seed + 7, 3);
+        fur(hx + 23 * s, hy + 8 * s, 10 * s, 9 * s, C.fur, seed + 8, 3);
+        fur(hx, hy, 30 * s, 26 * s, C.fur, seed + 9, 2);
+        ell(hx - 23 * s, hy + 8 * s, 10 * s, 9 * s, C.fur, 3, seed + 7);
+        ell(hx + 23 * s, hy + 8 * s, 10 * s, 9 * s, C.fur, 3, seed + 8);
+        // 頭頂的灰色淡斑（參考圖額頭）
+        rect(hx - 4 * s + ef, hy - 19 * s, 2 * s, 2 * s, "#E8DFD5");
+        rect(hx + ef, hy - 21 * s, 2 * s, 3 * s, "#E8DFD5");
+        rect(hx + 3 * s + ef, hy - 18 * s, 2 * s, 2 * s, "#E8DFD5");
+        // 眼睛
+        const fx = hx + face * 6 * s;
+        const lx = p.lookX || 0;
+        const ly = p.lookY || 0;
+        eye(fx - 11 * s, hy + 2 * s, p.eyeL || "open", s, lx, ly);
+        eye(fx + 11 * s, hy + 2 * s, p.eyeR || "open", s, lx, ly);
+        if (p.blush) {
+          ell(fx - 18 * s, hy + 10 * s, 4 * s, 2 * s, C.blush);
+          ell(fx + 18 * s, hy + 10 * s, 4 * s, 2 * s, C.blush);
+        }
+        // 鼻子與嘴
+        const nx = Math.round(fx + face * 1 * s);
+        const ny = Math.round(hy + 10 * s);
+        for (let j = 0; j < 3; j++) rect(nx - (2 - j) * s, ny + j * s * 0.8, (4 - 2 * j) * s + 1, Math.max(1, s * 0.8), C.nose);
+        if (p.mouth === "open") {
+          ell(nx, ny + 6 * s, 3 * s, 2.6 * s, "#9E3B4C");
+          ell(nx, ny + 7 * s, 2 * s, 1.2 * s, "#F08A9A");
+        } else {
+          rect(nx, ny + 2.4 * s, 1, 2 * s, C.line);
+          line(nx, ny + 4 * s, nx - 3 * s, ny + 5 * s, C.line);
+          line(nx, ny + 4 * s, nx + 3 * s, ny + 5 * s, C.line);
+        }
+        // 鬍鬚
+        [-1, 1].forEach((sd) => {
+          line(fx + sd * 15 * s, hy + 9 * s, fx + sd * 34 * s, hy + 5 * s, C.whisker);
+          line(fx + sd * 15 * s, hy + 11 * s, fx + sd * 35 * s, hy + 12 * s, C.whisker);
+        });
+        if (p.overHead) p.overHead(hx, hy, fx);
+      }
+
+      // ---------- 場景：室內 ----------
+      function snow(t, x0, y0, w, h, n, seed, fall) {
+        for (let i = 0; i < n; i++) {
+          const sp = (fall || 14) + hash(i, seed, 2) * 16;
+          const x = x0 + ((hash(i, seed, 1) * w + Math.sin(t * 1.3 + i) * 3) % w + w) % w;
+          const y = y0 + ((hash(i, seed, 3) * h + t * sp) % h);
+          const big = hash(i, seed, 4) > 0.75;
+          rect(x, y, big ? 2 : 1, big ? 2 : 1, "#FFFFFF");
+        }
+      }
+      function room(t) {
+        rect(0, 0, W, H, "#5B3A2A");
+        for (let x = 0; x < W; x += 24) rect(x, 0, 1, 200, "#4E3124");
+        rect(0, 150, W, 2, "#4A2E21");
+        rect(0, 200, W, 70, "#8B5A3C");
+        for (let y = 210; y < H; y += 12) rect(0, y, W, 1, "#7A4C31");
+        for (let y = 210, k = 0; y < H; y += 12, k++) {
+          for (let x = (k % 2) * 40; x < W; x += 80) rect(x, y, 1, 12, "#7A4C31");
+        }
+        rect(0, 200, W, 2, "#6B4430");
+        // 窗與雪景
+        rect(326, 36, 128, 116, "#6E4A33");
+        rect(332, 42, 116, 104, "#A9BCD0");
+        rect(332, 120, 116, 26, "#E7EEF5");
+        g.save();
+        g.beginPath();
+        g.rect(332, 42, 116, 104);
+        g.clip();
+        for (let i = 0; i < 6; i++) tri(340 + i * 22, 122, 352 + i * 22, 122, 346 + i * 22, 96 - (i % 3) * 6, "#7F98B0");
+        snow(t, 332, 42, 116, 104, 46, 1, 18);
+        g.restore();
+        rect(389, 42, 3, 104, "#6E4A33");
+        rect(332, 92, 116, 3, "#6E4A33");
+        rect(322, 148, 136, 6, "#7C5439");
+        rect(326, 146, 128, 3, "#FFFFFF");
+        // 聖誕樹
+        rect(68, 176, 12, 26, "#5A3A22");
+        const tiers = [
+          [74, 52, 22, 94],
+          [74, 78, 34, 128],
+          [74, 108, 46, 166],
+          [74, 138, 56, 190],
+        ];
+        tiers.forEach(([cx, top, hw, bot]) => {
+          tri(cx - hw - 1, bot + 1, cx + hw + 1, bot + 1, cx, top - 1, "#1E4A2A");
+          tri(cx - hw, bot, cx + hw, bot, cx, top, "#2F6B3A");
+          tri(cx - hw * 0.2, bot, cx + hw, bot, cx + hw * 0.2, top + (bot - top) * 0.4, "#285E33");
+        });
+        for (let i = 0; i < 26; i++) {
+          const yy = 64 + hash(i, 7, 1) * 120;
+          const span = 10 + (yy - 52) * 0.3;
+          const xx = 74 + (hash(i, 7, 2) * 2 - 1) * span;
+          const on = hash(i, Math.floor(t * 3), 9) > 0.3;
+          const col = ["#FFD36B", "#E8443A", "#FFFFFF", "#FFB0C0"][i % 4];
+          rect(xx, yy, 2, 2, on ? col : "#7A6A40");
+        }
+        for (let i = 0; i < 6; i++) ell(60 + i * 6, 120 + (i % 2) * 30, 3, 3, i % 2 ? "#C8202A" : "#E6C35C");
+        sparkle(74, 48, 1.2, C.gold);
+        // 包裝紙卷與緞帶卷（參考圖的道具）
+        rect(10, 214, 70, 16, "#B49A78");
+        rect(10, 213, 70, 15, C.paper);
+        for (let i = 0; i < 9; i++) rect(14 + i * 8, 216 + (i % 2) * 6, 3, 2, i % 3 ? C.green : C.red);
+        ell(80, 220, 4, 8, "#E6DCCB");
+        ell(80, 220, 2, 4, "#B49A78");
+        ell(436, 222, 14, 12, C.redDark);
+        ell(436, 222, 13, 11, C.red);
+        ell(436, 222, 5, 4, "#E8D5B5");
+        line(420, 228, 380, 240, C.red);
+        line(380, 240, 360, 236, C.red);
+        // 剪下的紙屑
+        rect(130, 244, 10, 5, C.paper);
+        rect(332, 250, 8, 4, C.paper);
+        rect(134, 245, 2, 1, C.green);
+      }
+
+      // ---------- 場景：店門口 ----------
+      function shop(t, doorOpen, flip, bob) {
+        rect(0, 0, W, 90, "#6577A3");
+        rect(0, 90, W, 60, "#7A8BB2");
+        for (let i = 0; i < 30; i++) rect(hash(i, 2, 2) * W, hash(i, 3, 3) * 70, 1, 1, "#C9D3EA");
+        // 建築
+        rect(40, 34, 424, 192, "#8A5236");
+        for (let y = 44; y < 226; y += 9) rect(40, y, 424, 1, "#7A4730");
+        rect(34, 26, 412, 10, "#6B3E28");
+        rect(32, 22, 416, 6, "#FFFFFF");
+        for (let i = 0; i < 20; i++) ell(40 + i * 21, 28, 6, 3, "#FFFFFF");
+        // 遮雨棚
+        for (let i = 0; i < 17; i++) rect(52 + i * 22, 64, 22, 20, i % 2 ? "#FFFFFF" : C.red);
+        for (let i = 0; i < 17; i++) ell(63 + i * 22, 84, 11, 5, i % 2 ? "#FFFFFF" : C.red, 0, 0, 84);
+        rect(50, 62, 378, 3, "#6B3E28");
+        for (let i = 0; i < 24; i++) {
+          const on = hash(i, Math.floor(t * 2.5), 4) > 0.25;
+          rect(56 + i * 16, 92 + (i % 2) * 2, 2, 2, on ? ["#FFD36B", "#E8443A", "#9EE09E"][i % 3] : "#6B5A3A");
+        }
+        line(54, 92, 440, 92, "#3B2A1E");
+        // 大窗
+        rect(78, 104, 122, 92, "#5A3422");
+        rect(83, 109, 112, 82, "#FFD48A");
+        tri(110, 186, 150, 186, 130, 122, "#3E7A45");
+        tri(118, 186, 142, 186, 130, 150, "#2F6B3A");
+        for (let i = 0; i < 8; i++) rect(118 + hash(i, 1, 9) * 24, 140 + hash(i, 2, 9) * 40, 2, 2, ["#E8443A", "#FFFFFF"][i % 2]);
+        rect(138, 109, 3, 82, "#5A3422");
+        rect(83, 148, 112, 3, "#5A3422");
+        rect(74, 194, 130, 6, "#6B3E28");
+        rect(74, 192, 130, 3, "#FFFFFF");
+        // 門
+        const dx0 = 214;
+        const dw = 56;
+        rect(dx0 - 5, 112, dw + 10, 114, "#4A2A1A");
+        rect(dx0, 117, dw, 109, "#F3C77A");
+        rect(dx0, 200, dw, 26, "#E0A85C");
+        const pw = Math.max(6, Math.round(dw * (1 - doorOpen * 0.82)));
+        rect(dx0, 117, pw, 109, "#6B3A22");
+        rect(dx0 + 2, 119, pw - 4, 105, "#7A4429");
+        if (pw > 30) {
+          rect(dx0 + 10, 126, pw - 20, 30, "#FFD48A");
+          rect(dx0 + pw / 2 - 1, 126, 2, 30, "#6B3A22");
+          ell(dx0 + pw / 2, 170, 11, 11, "#1E4A2A");
+          ell(dx0 + pw / 2, 170, 10, 10, "#2F6B3A");
+          ell(dx0 + pw / 2, 170, 5, 5, "#7A4429");
+          for (let i = 0; i < 6; i++) rect(dx0 + pw / 2 + Math.cos(i) * 8, 170 + Math.sin(i) * 8, 2, 2, C.red);
+          rect(dx0 + pw / 2 - 3, 180, 6, 4, C.red);
+          rect(dx0 + pw - 9, 186, 3, 6, C.gold);
+        }
+        // 吊牌
+        const sx = 390;
+        const sy = 128;
+        rect(sx - 54, 94, 108, 4, "#3B2A1E");
+        rect(sx - 56, 90, 4, 12, "#3B2A1E");
+        const k = Math.cos(Math.PI * flip);
+        const w = Math.max(2, Math.round(SW * Math.abs(k)));
+        for (let y = 98; y < sy - SH / 2 + bob; y += 3) {
+          rect(sx - w / 2 + Math.min(10, w / 4), y, 2, 2, "#7E7468");
+          rect(sx + w / 2 - Math.min(10, w / 4) - 2, y, 2, 2, "#7E7468");
+        }
+        g.imageSmoothingEnabled = false;
+        g.drawImage(k >= 0 ? signFront : signBack, Math.round(sx - w / 2), sy - SH / 2 + bob, w, SH);
+        // 雪地
+        rect(0, 226, W, 44, "#EEF2F7");
+        for (let i = 0; i < 40; i++) rect(hash(i, 8, 8) * W, 232 + hash(i, 9, 9) * 36, 6, 1, "#D5DDE8");
+        rect(40, 224, 400, 3, "#D5DDE8");
+        // 門口小松樹
+        tri(2, 226, 40, 226, 21, 170, "#1E4A2A");
+        tri(6, 224, 36, 224, 21, 176, "#2F6B3A");
+        ell(21, 176, 6, 3, "#FFFFFF");
+      }
+
+      function iris(cx, cy, R) {
+        g.fillStyle = C.night;
+        for (let y = 0; y < H; y++) {
+          const dy = y - cy;
+          if (Math.abs(dy) >= R) {
+            g.fillRect(0, y, W, 1);
+            continue;
+          }
+          const hw = Math.round(Math.sqrt(R * R - dy * dy));
+          g.fillRect(0, y, Math.max(0, cx - hw), 1);
+          g.fillRect(cx + hw, y, W, 1);
+        }
+      }
+
+      // ---------- 時間軸 ----------
+      function render(t) {
+        const seed = Math.floor(t * 8);
+        g.imageSmoothingEnabled = false;
+        let cam;
+        if (t < 13.0) {
+          room(t);
+          const s = 1.3;
+          const X = 240;
+          const GY = 234;
+          const p = { s, x: X, y: GY, seed, tail: t * 2.2 };
+          // 毛蓋住禮物、肚子鼓起
+          const belly = tw(t, 7.55, 8.25, 0, 1, "spring");
+          p.belly = belly;
+          // 包裝 0.8–2.8，緞帶 2.8–3.8，蝴蝶結 3.8–4.3
+          const wrap = tw(t, 0.8, 2.8, 0, 1, "lin");
+          const rv = tw(t, 2.8, 3.25, 0, 1, "out");
+          const rh = tw(t, 3.25, 3.75, 0, 1, "out");
+          const bow = t < 3.85 ? 0 : tw(t, 3.85, 4.3, 0, 1, "back");
+          const byc = GY - (26 + 3 * belly) * s;
+          // 禮物位置：地上 → 抱到胸前 → 塞進肚子
+          let gx = X;
+          let gy2 = path(t, [
+            [6.4, GY - 20],
+            [7.0, byc - 16, "back"],
+            [7.25, byc - 14],
+            [7.6, byc + 4, "in"],
+          ]);
+          let gr = tw(t, 7.0, 7.6, 19, 14, "io");
+          const cover = tw(t, 7.25, 7.6, 0, 1, "out");
+          const hopY = t > 4.3 && t < 5.0 ? Math.max(0, Math.sin(((t - 4.4) / 0.5) * Math.PI)) * 12 : 0;
+          p.hop = hopY;
+          p.sq = t > 4.25 && t < 4.4 ? 0.9 : t > 4.88 && t < 5.0 ? 0.92 : 1;
+          const giftDraw = () => gift(gx, gy2 - hopY * (t < 7 ? 0 : 1), gr, wrap, rv, rh, bow);
+          if (t < 7.6) {
+            if (t < 7.0) p.front = giftDraw;
+            else
+              p.inner = (cx, bc) => {
+                giftDraw();
+                if (cover > 0) {
+                  // 兩側的毛往中間把禮物吞掉
+                  const w = (gr + 4) * cover;
+                  fur(cx - gr - 6 + w * 0.9, bc + 4, w * 0.6 + 2, gr + 2, C.belly, seed + 30, 3);
+                  fur(cx + gr + 6 - w * 0.9, bc + 4, w * 0.6 + 2, gr + 2, C.belly, seed + 31, 3);
+                }
+              };
+          }
+          // 手掌
+          if (t < 4.3) {
+            const patL = Math.max(0, Math.sin((t - 0.8) * Math.PI * 3.2)) * (t > 0.8 && t < 3.8 ? 1 : 0);
+            const patR = Math.max(0, Math.sin((t - 0.95) * Math.PI * 3.2 + Math.PI)) * (t > 0.8 && t < 3.8 ? 1 : 0);
+            const sweep = tw(t, 0.8, 2.8, -1, 1, "lin");
+            p.pawL = [X - 14 + sweep * 4, GY - 34 + patL * 6];
+            p.pawR = [X + 14 + sweep * 3, GY - 32 + patR * 6];
+            if (t > 2.8 && t < 3.8) p.pawR = [X + tw(t, 3.25, 3.75, 4, 20), GY - tw(t, 2.8, 3.25, 38, 22)];
+            p.lookY = 1;
+            p.lookX = sweep * 0.6;
+            p.headY = 3;
+          } else if (t < 5.6) {
+            p.pawL = [X - 22, GY - 44 - hopY];
+            p.pawR = [X + 22, GY - 44 - hopY];
+          } else if (t < 6.4) {
+            p.lookX = t < 6.0 ? -1 : 1;
+            p.face = t < 6.0 ? -0.3 : 0.3;
+            p.pawL = [X - 14, GY - 30];
+            p.pawR = [X + 14, GY - 30];
+          } else if (t < 7.6) {
+            p.pawL = [gx - gr - 2, gy2 + 2];
+            p.pawR = [gx + gr + 2, gy2 + 2];
+            p.lookY = 1;
+          } else if (t < 9.8) {
+            const rub = Math.sin((t - 8.2) * Math.PI * 2.4) * 4;
+            p.pawL = [X - 28 + rub, byc + 2];
+            p.pawR = [X + 26 - rub * 0.6, byc + 12];
+          } else if (t < 11.6) {
+            p.pawL = [X - 14, GY - 6];
+            p.pawR = t < 10.6 ? [X + 14, GY - 6] : [X + 30, GY - tw(t, 10.6, 11.0, 6, 70, "out")];
+          }
+          // 表情
+          if (t > 4.25 && t < 5.6) {
+            p.eyeL = p.eyeR = "happy";
+            p.mouth = "open";
+          }
+          if (t > 8.1 && t < 9.8) {
+            p.eyeL = p.eyeR = "happy";
+            p.blush = true;
+          }
+          if ((t > 0.3 && t < 0.42) || (t > 6.9 && t < 7.02)) p.eyeL = p.eyeR = "closed";
+          if (t >= 7.6 && t < 8.1) {
+            p.lookY = 1;
+            p.mouth = "open";
+          }
+          // 冒愛心
+          if (t > 8.3 && t < 9.8) {
+            p.overHead = (hx, hy) => {
+              const u1 = tw(t, 8.3, 8.6, 0, 1, "back");
+              const u2 = tw(t, 8.65, 8.95, 0, 1, "back");
+              heart(hx - 40, hy - 30 - (t - 8.3) * 6, 2 * u1);
+              heart(hx + 42, hy - 40 - (t - 8.65) * 6, 1.4 * u2);
+            };
+          }
+          if (t > 3.85 && t < 4.6) {
+            p.overHead = () => {
+              const u = tw(t, 3.85, 4.1, 0, 1, "back") * tw(t, 4.35, 4.6, 1, 0, "in");
+              sparkle(gx - 30, GY - 52, 1.5 * u);
+              sparkle(gx + 32, GY - 46, 1.1 * u);
+            };
+          }
+          // 洋裝 9.8 起
+          const dressOn = t >= 10.42;
+          p.dress = dressOn;
+          if (dressOn) p.dressHi = true;
+          // 邀請函
+          if (t >= 11.0 && t < 13.0) {
+            const caught = t >= 11.55;
+            if (caught) {
+              p.hold = (pl, pr) => envelope(pr[0] + 4, pr[1] - 6, 1.2);
+            }
+          }
+          // 走路 11.8 起
+          if (t >= 11.8) {
+            const wx = tw(t, 11.8, 12.95, X, 340, "lin");
+            p.x = wx;
+            p.walk = (t - 11.8) * 2.6;
+            p.face = 0.7;
+            p.hop = Math.abs(Math.sin(p.walk * Math.PI)) * 3;
+            p.pawL = [wx - 10, GY - 26];
+            p.pawR = [wx + 22, GY - 40];
+            p.lookX = 1;
+          } else if (t >= 11.6) {
+            p.pawR = [X + 26, GY - 52];
+            p.pawL = [X - 14, GY - 6];
+            p.eyeL = p.eyeR = "happy";
+          }
+          if (t >= 10.2 && t < 10.75) p.eyeL = p.eyeR = "closed";
+          if (t >= 10.75 && t < 11.6) {
+            p.lookX = 1;
+            p.lookY = -1;
+          }
+          cat(p);
+          // 衣架降下 + 煙霧
+          if (t >= 9.8 && t < 10.42) dressItem(X, tw(t, 9.8, 10.2, -40, 96, "out"));
+          poof(X, GY - 70, tw(t, 10.2, 10.85, 0, 1, "lin"));
+          if (t >= 11.0 && t < 11.55) {
+            const u = (t - 11.0) / 0.55;
+            envelope(X + 80 - 46 * E.out(u) + Math.sin(u * 9) * 4, 40 + (GY - 98 - 40) * E.out(u), 1.2);
+          }
+          // 鏡頭
+          cam = {
+            x: path(t, [
+              [0.8, 240],
+              [2.0, 240],
+              [4.4, 240],
+              [5.2, 240],
+              [9.8, 240],
+              [10.4, 240],
+              [11.8, 240],
+              [12.9, 300, "io"],
+            ]),
+            y: path(t, [
+              [0.8, 135],
+              [2.0, 168, "io"],
+              [4.4, 168],
+              [5.2, 150, "io"],
+              [6.4, 150],
+              [7.6, 172, "io"],
+              [9.8, 172],
+              [10.4, 140, "io"],
+              [12.9, 150, "io"],
+            ]),
+            z: path(t, [
+              [0.8, 1.0],
+              [2.0, 1.35, "io"],
+              [4.4, 1.35],
+              [5.2, 1.15, "io"],
+              [6.4, 1.15],
+              [7.6, 1.45, "io"],
+              [9.8, 1.45],
+              [10.4, 1.0, "io"],
+              [11.8, 1.0],
+              [12.9, 1.12, "io"],
+            ]),
+          };
+          // iris 收在小貓身上
+          if (t >= 12.35) {
+            const R = tw(t, 12.35, 12.9, 260, 0, "in");
+            iris(Math.round(p.x), GY - 60, R);
+          }
+        } else {
+          const doorOpen = tw(t, 13.3, 13.8, 0, 1, "out");
+          const flip = tw(t, 15.0, 15.55, 0, 1, "io");
+          const bob = t > 15.55 && t < 16.4 ? Math.round(Math.sin((t - 15.55) * 22) * 3 * (1 - (t - 15.55) / 0.85)) : 0;
+          shop(t, doorOpen, flip, bob);
+          snow(t, 0, 0, W, 226, 90, 2, 16);
+          const GY = 228;
+          const s = 1.0;
+          let cx = tw(t, 13.6, 14.6, 242, 298, "lin");
+          const p = { s, x: cx, y: GY, seed, belly: 1, dress: true, dressHi: true, tail: t * 2.2 };
+          if (t >= 13.6 && t < 14.6) {
+            p.walk = (t - 13.6) * 2.6;
+            p.face = 0.7;
+            p.hop = Math.abs(Math.sin(p.walk * Math.PI)) * 2;
+            p.lookX = 1;
+          }
+          // 抬手翻牌
+          const reach = tw(t, 14.7, 15.0, 0, 1, "back") * tw(t, 15.55, 15.85, 1, 0, "io");
+          p.pawL = [cx - 12, GY - 26];
+          p.pawR = [cx + 10 + 26 * reach, GY - 12 - 62 * reach];
+          if (t >= 14.6 && t < 16.6) {
+            p.lookY = -1;
+            p.lookX = 1;
+            p.face = 0.3;
+          }
+          if (t >= 15.55 && t < 16.6) p.mouth = "open";
+          // 轉向鏡頭眨眼
+          if (t >= 16.6 && t < 17.8) {
+            p.face = tw(t, 16.6, 16.8, 0.3, 0, "out");
+            p.headX = tw(t, 16.9, 17.1, 0, 2, "back");
+            if (t >= 17.0 && t < 17.65) {
+              p.eyeR = "wink";
+              p.mouth = "open";
+              p.overHead = (hx, hy, fx) => sparkle(fx + 24, hy - 8, 1.6 * tw(t, 17.0, 17.15, 0, 1, "back") * tw(t, 17.45, 17.65, 1, 0, "in"));
+            }
+            p.pawR = [cx + 16, GY - 40];
+          }
+          // 走出畫面
+          if (t >= 17.8) {
+            const wx = tw(t, 17.8, 19.0, 298, 540, "in");
+            p.x = cx = wx;
+            p.walk = (t - 17.8) * 3;
+            p.face = 0.7;
+            p.hop = Math.abs(Math.sin(p.walk * Math.PI)) * 4;
+            p.pawL = [wx - 10, GY - 26];
+            p.pawR = [wx + 18, GY - 34];
+          }
+          p.hold = (pl) => envelope(pl[0] - 2, pl[1] - 6, 1.1);
+          if (t >= 13.55) cat(p);
+          cam = {
+            x: path(t, [
+              [13.0, 240],
+              [15.4, 240],
+              [16.2, 362, "io"],
+              [17.8, 362],
+              [18.9, 390, "io"],
+            ]),
+            y: path(t, [
+              [13.0, 135],
+              [15.4, 135],
+              [16.2, 150, "io"],
+              [17.8, 150],
+              [18.9, 132, "io"],
+            ]),
+            z: path(t, [
+              [13.0, 1.0],
+              [15.4, 1.0],
+              [16.2, 1.7, "io"],
+              [17.8, 1.7],
+              [18.9, 2.0, "io"],
+            ]),
+          };
+          if (t < 13.5) {
+            const R = tw(t, 13.05, 13.5, 0, 280, "out");
+            iris(242, 170, R);
+          }
+        }
+        // 鏡頭：從邏輯畫布擷取再放大，保持像素顆粒
+        const sw = W / cam.z;
+        const sh = H / cam.z;
+        const sx = Math.min(W - sw, Math.max(0, cam.x - sw / 2));
+        const sy = Math.min(H - sh, Math.max(0, cam.y - sh / 2));
+        o.imageSmoothingEnabled = false;
+        o.clearRect(0, 0, 1920, 1080);
+        o.drawImage(world, sx, sy, sw, sh, 0, 0, 1920, 1080);
+      }
+
+      const state = { t: 0 };
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo(
+        state,
+        { t: 0 },
+        { t: DUR, duration: DUR, ease: "none", onUpdate: () => render(state.t) },
+        0,
+      );
+      render(0);
+      window.__timelines = window.__timelines || {};
+      window.__timelines["story"] = tl;
+    })();
+  </script>
+</template>

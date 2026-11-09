@@ -89,6 +89,8 @@
         <input id="trailer-seek" type="range" min="0" max="28" step="0.05" value="0" aria-label="播放進度">
         <span id="trailer-time">0:00</span>
       </div>
+      <!-- 集數：由 window.EPISODES 產生，只列已經做好的集數 -->
+      <div id="episode-list" role="group" aria-label="集數"></div>
       <button id="trailer-close" type="button" class="pixel-btn">關閉</button>
     </div>
   </div>
@@ -125,6 +127,7 @@
 
   <script src="sprites.js"></script>
   <script src="trailer.js"></script>
+  <script src="ep2.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
