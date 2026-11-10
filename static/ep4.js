@@ -4,12 +4,13 @@
       // 下方 SPRITES 區塊由 video/design/export_pieces.py 自動產生
       
 
-      // 第四集：綿羊和山羊在互撞、獅子和棕熊打成一團煙霧，小白兔當裁判嚇得半死
+      // 第四集：小白兔當裁判（面向鏡頭）嚇得發抖、眼珠亂轉，鏡頭跟著眼珠看左邊互撞的綿羊和山羊、
+      // 右邊打成一團煙霧的獅子和棕熊（都放大兩倍）→ 拉遠，小白兔夾在中間又小又怕
       // → 小貓帶著前兩集的朋友走進來，揮手叫停 → 打架的後果（蓬成毛球、山羊頭卡在羊毛裡、爆炸頭、腫包）
-      // → 發名牌公布名字 → 大家排成兩列跟著小貓走出畫面
-      const DUR = 34;
+      // → 發名牌公布名字，拿到名牌的就不吵了 → 世界和平（一起跳、冒愛心）→ 大家排成兩列跟著小貓走出畫面
+      const DUR = 39;
       const P = 15; // 一格 = 15 px
-      const GW = 288; // 世界比畫面寬一倍多，鏡頭橫移（角色多，比第三集再寬 32 格）
+      const GW = 352; // 世界比畫面寬快兩倍，鏡頭橫移（角色多、又有放大兩倍的動物）
       const GH = 72;
       const GROUND = 63; // 腳底所在的列（後排）
       const FRONT = GROUND + 5; // 前排的腳底
@@ -135,7 +136,7 @@
 
       // ---------- 動物（紙娃娃） ----------
       // 角色框：w x h，腳底踩在框的最下面。fx/fy 是腳底的世界座標（fy 預設 GROUND），
-      // rot 繞腳底轉；sx = -1 是面向左（山羊、棕熊）
+      // rot 繞腳底轉；sx = -1 是面向左（山羊、棕熊）；k 是整隻放大的倍數
       const RIG = {
         mk: { w: 16, h: 28, foot: 7, neck: [8, 10] },
         ot: { w: 18, h: 22, foot: 8, neck: [10, 9] },
@@ -163,8 +164,8 @@
       function rigToWorld(st, p) {
         const r = RIG[st.kind];
         const f = footOf(st);
-        const dx = (p[0] - r.foot) * (st.sx || 1);
-        const dy = (p[1] - r.h) * (st.sy || 1);
+        const dx = (p[0] - r.foot) * (st.sx || 1) * (st.k || 1);
+        const dy = (p[1] - r.h) * (st.sy || 1) * (st.k || 1);
         const a = st.rot || 0;
         return [f[0] + dx * Math.cos(a) - dy * Math.sin(a), f[1] + dx * Math.sin(a) + dy * Math.cos(a)];
       }
@@ -174,7 +175,7 @@
         ctx.save();
         ctx.translate(f[0], f[1]);
         if (st.rot) ctx.rotate(st.rot);
-        ctx.scale(st.sx || 1, st.sy || 1);
+        ctx.scale((st.sx || 1) * (st.k || 1), (st.sy || 1) * (st.k || 1));
         ctx.translate(-r.foot, -r.h);
         parts();
         ctx.restore();
@@ -250,10 +251,16 @@
         },
         rb: (st) => {
           if (st.ball) return piece("rb_ball", 0);
-          piece("rb_body", 0);
-          // 哨子含在嘴上（座標相對於頭的關節 7.5,16）
-          const after = st.whistle ? () => piece("whistle", -0.15, { ax: 3.4, ay: -3.6 }) : null;
-          piece("rb_head_" + (st.face || "open") + "_" + (st.ears || "up"), st.headRot || 0, { after });
+          if (!st.front) {
+            piece("rb_body", 0);
+            return piece("rb_head_" + (st.face || "open") + "_" + (st.ears || "up"), st.headRot || 0);
+          }
+          // 正面：眼珠在大眼白裡亂轉（眼白左上格在 4,10 與 10,10；座標相對於頭的關節 7.5,16）
+          const eyes = st.eyes || "scared";
+          const look = st.look || [0, 0];
+          const after = eyes === "scared" ? () => [4, 10].forEach((x) => piece("pupil", 0, { ax: x + look[0] - 7.5, ay: 10 + look[1] - 16 })) : null;
+          piece("rb_front_body", 0);
+          piece("rb_front_" + eyes + "_" + (st.ears || "up"), st.headRot || 0, { after });
         },
       };
       function drawAnimal(st) {
@@ -312,6 +319,8 @@
         triW(204, 29, 30, 47, "#A8D5A2");
         triW(250, 35, 20, 47, "#93C98E");
         triW(284, 30, 26, 47, "#A8D5A2");
+        triW(318, 34, 22, 47, "#93C98E");
+        triW(350, 29, 28, 47, "#A8D5A2");
         R(0, 46, GW, 26, "#B7DFA8");
         for (let y = 49; y < GH; y += 4) R(0, y, GW, 1, "#A6D497");
         for (let i = 0; i < 92; i++) {
@@ -325,67 +334,74 @@
         bush(117, 45);
         bush(247, 44);
         bush(279, 45);
+        bush(343, 44);
       }
 
       // ---------- 時間軸 ----------
+      // 綿羊、山羊、獅子、棕熊放大兩倍（BIG），小白兔夾在中間顯得又小又怕
+      const BIG = 2;
       // 隊伍：小貓帶頭，前兩集的朋友跟在後面走進來。大隻的（蛇、大象、長頸鹿）走後排，
-      // 小隻的走前排（腳底低 5 格、畫在前面），停下來時的腳底 x 如下
-      const CAT_X = 120;
+      // 小隻的走前排（腳底低 5 格、畫在前面），停下來時的腳底 x 如下（左邊幾隻停在畫面外）
+      const CAT_X = 70;
       const CAT_FOOT = CAT_X + 20;
-      const WALK0 = 4.5; // 隊伍從畫面外起步
-      const WALK_IN = 13.4; // 小貓走到定位
-      const HOME = { sn: 110, el: 46, gf: 1, sq: 120, gp: 106, hm: 88, qk: 72, ot: 52, mk: 30 };
+      const WALK0 = 9.0; // 隊伍從畫面外起步
+      const WALK_IN = 15.4; // 小貓走到定位
+      const HOME = { sn: 60, el: -4, gf: -49, sq: 70, gp: 56, hm: 38, qk: 22, ot: 2, mk: -20 };
       const BACK_ROW = ["gf", "el"];
       const FRONT_ROW = ["mk", "ot", "qk", "hm", "gp", "sq"];
       const OLD_TAG = { el: 1, gf: 1, ot: 1, mk: 1, sn: 1, sq: 0.85, gp: 0.8, hm: 0.75, qk: 0.85 };
 
       // 打架：綿羊（面向右）和山羊（面向左）互撞，每 1.5 秒撞一次；獅子和棕熊在右邊打成一團煙霧
-      const SH_X = 168;
-      const GT_X = 200;
-      const CLASH_X = 184.5;
-      const RB_X = 220; // 小白兔裁判
-      const BX = 252; // 打架煙霧的中心
-      const BY = GROUND - 9;
+      const SH_X = 145;
+      const GT_X = 201;
+      const CLASH_X = 174;
+      const RB_X = 232; // 小白兔裁判
+      const BX = 285; // 打架煙霧的中心
+      const BY = GROUND - 18;
       const CYCLE = 1.5;
       const BUTT0 = 0.3;
-      // 第 5 次互撞（7.2 秒）山羊被彈飛，撞到小白兔；8.7 秒那次山羊還沒回來，綿羊撞空
-      const GOAT_FLY = 7.2;
-      const GOAT_BACK = 9.0;
+      // 8.7 秒那次山羊被彈飛，撞到小白兔；10.2 秒那次山羊還沒回來，綿羊撞空
+      const GOAT_FLY = 8.7;
+      const GOAT_BACK = 10.5;
       const CLASHES = [];
-      for (let c = BUTT0 + 0.9; c < 13.7; c += CYCLE) if (c < GOAT_FLY + 0.1 || c > GOAT_BACK) CLASHES.push(c);
+      for (let c = BUTT0 + 0.9; c < 15.8; c += CYCLE) if (c < GOAT_FLY + 0.1 || c > GOAT_BACK) CLASHES.push(c);
       // 小白兔被山羊撞到：跳起來 → 縮成毛球發抖 → 回來繼續當裁判
-      const RB_JUMP = 7.45;
-      const RB_BALL = [7.95, 9.6];
+      const RB_JUMP = 8.95;
+      const RB_BALL = [9.45, 11.1];
+      // 開場：小白兔眼珠先往左看（鏡頭跟過去看羊打架），再往右看（看獅熊打架）
+      const LOOK_L = [2.0, 4.5];
+      const LOOK_R = [4.5, 7.4];
 
-      const STOP = 13.7; // 小貓揮手，大家停手
-      const DIZZY_END = 14.9;
-      const LN_X = 242; // 停手後獅子、棕熊鼻子對鼻子瞪著
-      const BR_X = 272;
-      const STUCK = 17; // 山羊頭卡在羊毛裡：山羊腳底在綿羊右邊幾格
+      const STOP = 15.8; // 小貓揮手，大家停手
+      const DIZZY_END = 17.0;
+      const LN_X = 268; // 停手後獅子、棕熊鼻子對鼻子瞪著
+      const BR_X = 328;
+      const STUCK = 17 * BIG; // 山羊頭卡在羊毛裡：山羊腳底在綿羊右邊幾格
       const WOOL_MAX = 1.55;
 
-      // 公布名字：每隻 1.8 秒，從 TAG_AT 起依序是綿羊、山羊、獅子、棕熊、小白兔
-      const TAG_AT = 15.4;
+      // 公布名字：每隻 1.8 秒，從 TAG_AT 起依序是綿羊、山羊、獅子、棕熊、小白兔；發完才世界和平
+      const TAG_AT = 17.4;
       const STEP = 1.8;
       const TAGS = [
-        { kind: "sh", cap: "cap_yvette", focus: [180, 50], scale: 0.9 },
-        { kind: "gt", cap: "cap_zeyi", focus: [192, 50], scale: 0.9 },
-        { kind: "ln", cap: "cap_david", focus: [228, 48], scale: 1 },
-        { kind: "br", cap: "cap_steve", focus: [244, 48], scale: 1 },
-        { kind: "rb", cap: "cap_maisie", focus: [212, 50], scale: 0.75 },
+        { kind: "sh", cap: "cap_yvette", focus: [150, 44], scale: 1.4 },
+        { kind: "gt", cap: "cap_zeyi", focus: [192, 44], scale: 1.4 },
+        { kind: "ln", cap: "cap_david", focus: [262, 40], scale: 1.4 },
+        { kind: "br", cap: "cap_steve", focus: [316, 40], scale: 1.4 },
+        { kind: "rb", cap: "cap_maisie", focus: [232, 48], scale: 0.75 },
       ];
       const THROW = 0.55; // 每段開始後幾秒拋出名牌
       const FLY = 0.45; // 名牌飛行秒數
       const tagHit = (i) => TAG_AT + STEP * i + THROW + FLY;
+      const PEACE = TAG_AT + STEP * TAGS.length; // 世界和平：大家一起跳、冒愛心
 
       // 遊行：小貓帶頭，大家用同樣的速度排成兩列跟上。GAP 是腳底落後小貓腳底多少格，
       // 小貓走到「自己的位置 + GAP」時才起步。山羊和綿羊卡在一起，算同一組（pair，以山羊的腳底為準）
-      const GO = 24.6;
-      const V = 50; // 格/秒
+      const GO = PEACE + 1.6;
+      const V = 60; // 格/秒
       const FOOT0 = Object.assign({ pair: SH_X + STUCK, ln: LN_X, br: BR_X, rb: RB_X }, HOME);
       const GAP = {
-        pair: 14, ln: 62, br: 92, sn: 132, el: 196, gf: 236, // 後排
-        rb: 20, sq: 40, gp: 58, hm: 74, qk: 90, ot: 110, mk: 132, // 前排
+        pair: 36, ln: 130, br: 186, sn: 230, el: 290, gf: 330, // 後排
+        rb: 24, sq: 44, gp: 62, hm: 78, qk: 94, ot: 114, mk: 136, // 前排
       };
       const START = {};
       Object.keys(GAP).forEach((kd) => (START[kd] = GO + (FOOT0[kd] + GAP[kd] - CAT_FOOT) / V));
@@ -408,7 +424,7 @@
       function stride(st, w, n) {
         const kd = st.kind;
         const ph = w * Math.PI * (kd === "el" ? 3 : 3.4) + (n || 0);
-        st.hop = Math.abs(Math.sin(ph)) * (kd === "el" ? 0.8 : kd === "gf" ? 1.2 : kd === "ln" || kd === "br" ? 1.4 : 2);
+        st.hop = Math.abs(Math.sin(ph)) * (kd === "el" ? 0.8 : kd === "gf" ? 1.2 : st.k ? 2.4 : 2);
         if (kd === "el" || kd === "gf") st.leg = Math.sin(ph) * (kd === "el" ? 0.25 : 0.3);
         st.face = "happy";
       }
@@ -417,7 +433,7 @@
         if (t < BUTT0) return { d: 0, head: 0 };
         const u = ((t - BUTT0) % CYCLE) / CYCLE;
         return {
-          d: path(u, [[0, 0], [0.45, -5, "io"], [0.6, 4.5, "in"], [0.72, -1.5, "out"], [1, 0, "io"]]),
+          d: path(u, [[0, 0], [0.45, -8, "io"], [0.6, 5.5, "in"], [0.72, -2, "out"], [1, 0, "io"]]),
           head: path(u, [[0.3, 0], [0.5, 0.35, "io"], [0.75, 0.35], [0.95, 0, "io"]]),
         };
       }
@@ -429,26 +445,32 @@
         ctx.fillRect(0, 0, 1920, 1080);
         meadow(t);
 
-        // 鏡頭：先看兩場架 → 推近小白兔 → 往左看隊伍走進來，跟著小貓回到右邊 → 公布名字時依序對準 → 拉遠看大家走出去
+        // 鏡頭：特寫發抖的小白兔 → 跟著眼珠看左邊的羊、右邊的獅熊（都好大隻）→ 拉遠，小白兔在中間
+        // → 往左看隊伍走進來，跟著小貓回來 → 公布名字時依序對準 → 世界和平 → 跟著小貓走
         const camKeys = {
-          x: [[0, 218], [4.2, 218], [4.8, 220, "io"], [9.2, 220], [10.2, 80, "io"], [13.0, 150, "lin"], [13.8, 218, "io"]],
-          y: [[0, 36], [4.2, 36], [4.8, 44, "io"], [9.2, 44], [10.2, 36, "io"]],
-          z: [[0, 1], [4.2, 1], [4.8, 1.4, "io"], [9.2, 1.4], [10.2, 1, "io"]],
+          x: [[0, RB_X], [LOOK_L[0], RB_X], [LOOK_L[0] + 0.6, 174, "io"], [LOOK_R[0], 174], [LOOK_R[0] + 0.8, 290, "io"], [LOOK_R[1], 290], [LOOK_R[1] + 1.0, RB_X, "io"],
+            [12.0, RB_X], [12.8, 64, "io"], [14.6, 104, "lin"], [15.4, 136, "io"], [16.3, 136], [16.9, 280, "io"]],
+          y: [[0, 48], [LOOK_L[0], 48], [LOOK_L[0] + 0.6, 40, "io"], [LOOK_R[1], 40], [LOOK_R[1] + 1.0, 36, "io"]],
+          z: [[0, 2.2], [LOOK_L[0], 2.2], [LOOK_L[0] + 0.6, 1.5, "io"], [LOOK_R[1], 1.5], [LOOK_R[1] + 1.0, 1, "io"]],
         };
         const ZOOM = 1.25;
         TAGS.forEach((tg, i) => {
           const t0 = TAG_AT + STEP * i;
-          const prev = i ? TAGS[i - 1].focus : [218, 36];
+          const prev = i ? TAGS[i - 1].focus : [280, 36];
           camKeys.x.push([t0, prev[0]], [t0 + 0.6, tg.focus[0], "io"]);
           camKeys.y.push([t0, prev[1]], [t0 + 0.6, tg.focus[1], "io"]);
           camKeys.z.push([t0, i ? ZOOM : 1], [t0 + 0.6, ZOOM, "io"]);
         });
-        const tEnd = TAG_AT + STEP * TAGS.length;
         const last = TAGS[TAGS.length - 1].focus;
-        camKeys.x.push([tEnd, last[0]], [tEnd + 0.8, 218, "io"]);
-        camKeys.y.push([tEnd, last[1]], [tEnd + 0.8, 36, "io"]);
-        camKeys.z.push([tEnd, ZOOM], [tEnd + 0.8, 1, "io"]);
+        camKeys.x.push([PEACE, last[0]], [PEACE + 0.8, RB_X, "io"]);
+        camKeys.y.push([PEACE, last[1]], [PEACE + 0.8, 36, "io"]);
+        camKeys.z.push([PEACE, ZOOM], [PEACE + 0.8, 1, "io"]);
         const cam = { x: path(t, camKeys.x), y: path(t, camKeys.y), z: path(t, camKeys.z) };
+        if (t >= GO) {
+          // 跟著帶頭的小貓走，走到世界右邊就停住，看大家一隻隻走過去
+          const follow = Math.max(130, CAT_FOOT + V * (t - GO) + 20);
+          cam.x = tw(t, GO, GO + 0.8, RB_X, follow, "io");
+        }
         const z = cam.z;
         const vw = 128 / z;
         const vh = GH / z;
@@ -461,6 +483,14 @@
         const stopped = t >= STOP;
         const dizzy = stopped && t < DIZZY_END;
         const calm = t >= DIZZY_END;
+        const peace = t >= PEACE;
+        const cheer = (st, n) => {
+          // 世界和平：一起跳一下
+          if (t >= PEACE && t < PEACE + 0.8) {
+            st.face = "happy";
+            st.hop = (st.hop || 0) + jump(t, PEACE + (n || 0) * 0.04, 0.45, st.k ? 5 : 3);
+          }
+        };
 
         // ---- 隊伍走進來：整隊跟著小貓平移 ----
         const catX = tw(t, WALK0, WALK_IN, -60, CAT_X, "lin");
@@ -482,6 +512,7 @@
           }
           // 看到打架嚇一跳（停下來那一刻跳一下）
           if (t >= STOP && t < STOP + 0.5) st.hop = (st.hop || 0) + jump(t, STOP + n * 0.03, 0.4, 2);
+          cheer(st, n);
           old[kd] = st;
         });
         const sn = { x: HOME.sn + off, face: "open", headRot: Math.sin(t * 2.4) * 0.08 };
@@ -491,14 +522,18 @@
           sn.headRot = 0;
           sn.face = "happy";
         }
+        if (t >= PEACE && t < PEACE + 0.8) {
+          sn.face = "happy";
+          sn.hop = jump(t, PEACE, 0.45, 3);
+        }
         sn.spin = (sn.x - HOME.sn) / RING_R; // 往右滾
 
         // ---- 綿羊、山羊 ----
-        const sheep = { kind: "sh", fx: SH_X, face: "open" };
-        const goat = { kind: "gt", fx: GT_X, sx: -1, face: "open" };
+        const sheep = { kind: "sh", k: BIG, fx: SH_X, face: "open" };
+        const goat = { kind: "gt", k: BIG, fx: GT_X, sx: -1, face: "open" };
         const hits = CLASHES.filter((c) => c <= Math.min(t, STOP));
         const lastHit = hits.length ? hits[hits.length - 1] : -9;
-        sheep.wool = 1 + 0.08 * hits.length + pop(t, lastHit, 0.15, 0.4);
+        sheep.wool = Math.min(1.45, 1 + 0.06 * hits.length) + pop(t, lastHit, 0.15, 0.4);
         let clashFx = -1;
         if (!stopped) {
           const b = butt(t);
@@ -508,10 +543,10 @@
           goat.headRot = b.head;
           if (t >= GOAT_FLY && t < GOAT_BACK) {
             // 被彈飛到小白兔旁邊，暈一下再走回來
-            goat.fx = GT_X + path(t, [[GOAT_FLY, 0], [RB_JUMP, 9, "out"], [8.4, 9], [GOAT_BACK, 0, "io"]]);
-            goat.hop = jump(t, GOAT_FLY, RB_JUMP - GOAT_FLY, 4);
+            goat.fx = GT_X + path(t, [[GOAT_FLY, 0], [RB_JUMP, 18, "out"], [9.9, 18], [GOAT_BACK, 0, "io"]]);
+            goat.hop = jump(t, GOAT_FLY, RB_JUMP - GOAT_FLY, 6);
             goat.headRot = 0;
-            goat.face = t < 8.4 ? "dizzy" : "open";
+            goat.face = t < 9.9 ? "dizzy" : "open";
           }
           if (lastHit > 0 && t < lastHit + 0.3) {
             clashFx = (t - lastHit) / 0.3;
@@ -527,7 +562,7 @@
           if (dizzy) sheep.face = "dizzy";
           // 想把頭拔出來：後腳亂踢
           if (t >= STOP + 0.35) {
-            goat.hop = Math.abs(Math.sin(t * 18)) * 0.8;
+            goat.hop = Math.abs(Math.sin(t * 18)) * 1.2;
             goat.rot = Math.sin(t * 9) * 0.05;
             goat.headRot = 0.6 + Math.sin(t * 9) * 0.06;
           }
@@ -540,20 +575,19 @@
           sheep.rot = -0.06;
           sheep.face = "happy";
         } else if (stopped) {
-          sheep.fx = goat.fx - STUCK;
-          if (t < STOP + 0.35) sheep.fx = SH_X;
+          sheep.fx = t < STOP + 0.35 ? SH_X : goat.fx - STUCK;
         }
 
-        // ---- 獅子、棕熊：打成一團 → 停手後坐開，一個爆炸頭、一個腫包 ----
-        const lion = { kind: "ln", face: "open" };
-        const bear = { kind: "br", sx: -1, face: "open" };
+        // ---- 獅子、棕熊：打成一團 → 停手後鼻子對鼻子瞪著，一個爆炸頭、一個腫包 ----
+        const lion = { kind: "ln", k: BIG, face: "open" };
+        const bear = { kind: "br", k: BIG, sx: -1, face: "open" };
         const brawl = (tt) => ({
-          lx: BX - 5 + Math.sin(tt * 7) * 2.5,
-          ly: GROUND - Math.abs(Math.sin(tt * 8)) * 5,
-          lr: Math.sin(tt * 6) * 0.7,
-          bx: BX + 6 + Math.sin(tt * 6 + 1) * 2.5,
-          by: GROUND - Math.abs(Math.sin(tt * 7 + 1)) * 5,
-          br: -Math.sin(tt * 5.5 + 0.5) * 0.7,
+          lx: BX - 10 + Math.sin(tt * 7) * 5,
+          ly: GROUND - Math.abs(Math.sin(tt * 8)) * 8,
+          lr: Math.sin(tt * 6) * 0.6,
+          bx: BX + 12 + Math.sin(tt * 6 + 1) * 5,
+          by: GROUND - Math.abs(Math.sin(tt * 7 + 1)) * 8,
+          br: -Math.sin(tt * 5.5 + 0.5) * 0.6,
         });
         if (!stopped) {
           const b = brawl(t);
@@ -563,11 +597,11 @@
           const b = brawl(STOP);
           const u = tw(t, STOP, STOP + 0.45, 0, 1, "out");
           lion.fx = b.lx + (LN_X - b.lx) * u;
-          lion.fy = GROUND - jump(t, STOP, 0.45, 6);
+          lion.fy = GROUND - jump(t, STOP, 0.45, 10);
           lion.rot = b.lr * (1 - u);
           lion.messy = true;
           bear.fx = b.bx + (BR_X - b.bx) * u;
-          bear.fy = GROUND - jump(t, STOP, 0.45, 6);
+          bear.fy = GROUND - jump(t, STOP, 0.45, 10);
           bear.rot = b.br * (1 - u);
           bear.bump = tw(t, STOP + 0.45, STOP + 0.75, 0, 1, "back");
           if (dizzy) {
@@ -575,28 +609,24 @@
             lion.headRot = Math.sin(t * 9) * 0.12;
             bear.headRot = Math.sin(t * 9 + 1) * 0.12;
           }
-                  }
+        }
 
-        // ---- 小白兔裁判 ----
-        const rb = { kind: "rb", fx: RB_X, face: "open", ears: "down", whistle: true };
-        if (!stopped || t < tagHit(4)) {
-          // 嚇到一直發抖，左右張望
+        // ---- 小白兔裁判：一直面向鏡頭，嚇到發抖、眼珠亂轉 ----
+        const rb = { kind: "rb", fx: RB_X, front: true, eyes: "scared", ears: "up" }; // 耳朵一直豎著，一看就是兔子
+        if (t < tagHit(4)) {
           rb.fx += Math.sin(t * 47) * 0.25;
           rb.headRot = Math.sin(t * 31) * 0.04;
-          rb.sx = !stopped && Math.floor(t / 1.2) % 2 ? -1 : 1;
-          if (stopped) rb.sx = -1;
+          // 眼珠每 0.22 秒換一個方向（左右為主，偶爾往上下瞄）；開場跟著鏡頭先看左、再看右
+          const slot = Math.floor(t / 0.22);
+          rb.look = [hash(slot, 5, 1) < 0.5 ? 0 : 1, hash(slot, 5, 2) < 0.7 ? 0 : 1];
+          if (t >= LOOK_L[0] - 0.2 && t < LOOK_L[1]) rb.look = [0, 0];
+          if (t >= LOOK_R[0] && t < LOOK_R[1]) rb.look = [1, 0];
         }
-        let blowing = false;
         if (!stopped) {
-          // 吹哨子：每 1.4 秒吹一次，頭往上抬一下
-          const bt = (t - 1.0) % 1.4;
-          blowing = t > 1.0 && bt < 0.35 && !(t > RB_JUMP && t < RB_BALL[1] + 0.3);
-          if (blowing) rb.headRot -= 0.15;
           if (t >= RB_JUMP && t < RB_BALL[0]) {
+            // 被山羊撞到：嚇得跳起來，眼珠亂轉
             rb.hop = jump(t, RB_JUMP, RB_BALL[0] - RB_JUMP, 7);
-            rb.ears = "up";
-            rb.face = "dizzy";
-            rb.whistle = false;
+            rb.look = [Math.floor(t * 20) % 2, 0];
           }
           if (t >= RB_BALL[0] && t < RB_BALL[1]) {
             rb.ball = true;
@@ -606,24 +636,35 @@
         }
         const rbTagged = t >= tagHit(4);
         if (rbTagged) {
-          // 收到名牌，終於鬆一口氣：耳朵豎起來、一屁股坐下
-          rb.ears = "up";
-          rb.face = "happy";
-          rb.whistle = false;
-          rb.sx = -1;
+          // 收到名牌，終於鬆一口氣：一屁股坐下
+          rb.eyes = "happy";
           rb.sy = tw(t, tagHit(4) + 0.3, tagHit(4) + 0.5, 1, 0.84, "out");
+          if (peace) rb.sy = 1;
+          cheer(rb);
         }
         const rbf = paradeFoot("rb", t);
         if (rbf !== null) {
           rb.fx = rbf;
-          rb.sx = 1;
+          rb.front = false; // 走路時轉成側面
+          rb.face = "happy";
           rb.sy = 1;
           rb.fy = tw(t, START.rb, START.rb + 0.3, GROUND, FRONT, "io");
           const w = walking("rb", t);
           if (w >= 0) stride(rb, w);
         }
 
-        // ---- 遊行：新朋友轉過來面向右走 ----
+        // ---- 拿到名牌就不吵了：表情轉開心，世界和平時一起跳 ----
+        const rigs = { sh: sheep, gt: goat, ln: lion, br: bear, rb };
+        TAGS.forEach((tg, i) => {
+          const st = rigs[tg.kind];
+          const t0 = tagHit(i);
+          if (t < t0 || tg.kind === "rb") return;
+          st.face = "happy";
+          if (t < t0 + 1.0) st.hop = (st.hop || 0) + jump(t, t0, 0.4, 4);
+          cheer(st, i);
+        });
+
+        // ---- 遊行：獅子、棕熊轉過來面向右走 ----
         [["ln", lion], ["br", bear]].forEach(([kd, st], n) => {
           const pf = paradeFoot(kd, t);
           if (pf === null) return;
@@ -635,20 +676,8 @@
         });
         if (pairF !== null) {
           const w = walking("pair", t);
-          if (w >= 0) goat.hop = Math.abs(Math.sin(w * Math.PI * 5)) * 1.2;
+          if (w >= 0) goat.hop = Math.abs(Math.sin(w * Math.PI * 5)) * 1.6;
         }
-
-        // ---- 發名牌：被掛到的那隻開心跳一下 ----
-        const rigs = { sh: sheep, gt: goat, ln: lion, br: bear, rb };
-        TAGS.forEach((tg, i) => {
-          const t0 = tagHit(i);
-          if (t >= t0 && t < t0 + 1.0) {
-            const st = rigs[tg.kind];
-            st.face = "happy";
-            if (tg.kind !== "rb") st.hop = (st.hop || 0) + jump(t, t0, 0.4, 2.5);
-          }
-        });
-        if (calm && pairF === null && t >= tagHit(0)) sheep.face = "happy";
 
         // ---- 畫：後排 → 打架的 → 小貓 → 前排 ----
         const tagOn = (st, kd, scale) => {
@@ -666,17 +695,18 @@
         if (t < STOP + 0.5) {
           const grow = stopped ? 1 + (t - STOP) * 1.6 : 1;
           const fade = stopped ? tw(t, STOP, STOP + 0.5, 1, 0, "in") : 1;
-          for (let i = 0; i < 7; i++) {
-            const a = t * 3 + i * 0.9;
-            const s = (1.15 + 0.25 * Math.sin(t * 9 + i * 1.7)) * fade;
-            piece("dust", 0, { ax: BX + Math.cos(a) * 6 * grow + Math.sin(t * 11 + i) * 1.2, ay: BY + Math.sin(a) * 3.2 * grow, scale: s });
+          // 煙霧只蓋住扭在一起的身體中段，頭、尾巴、腳都露出來
+          for (let i = 0; i < 5; i++) {
+            const a = t * 3 + i * 1.25;
+            const s = (1.45 + 0.3 * Math.sin(t * 9 + i * 1.7)) * fade;
+            piece("dust", 0, { ax: BX + Math.cos(a) * 9 * grow + Math.sin(t * 11 + i) * 2, ay: BY + 4 + Math.sin(a) * 4 * grow, scale: s });
           }
           if (!stopped) {
             // 煙霧邊緣不時冒出星星
             const slot = Math.floor(t / 0.25);
             const a = hash(slot, 3, 1) * Math.PI * 2;
             const u = (t % 0.25) / 0.25;
-            piece("sparkle", 0, { ax: BX + Math.cos(a) * 13, ay: BY + Math.sin(a) * 7, scale: Math.sin(u * Math.PI) * 0.9 });
+            piece("sparkle", 0, { ax: BX + Math.cos(a) * 24, ay: BY + Math.sin(a) * 13, scale: Math.sin(u * Math.PI) * 1.6 });
           }
         }
         drawAnimal(goat);
@@ -684,8 +714,8 @@
         // 互撞的火花
         if (clashFx >= 0) {
           const s = Math.sin(clashFx * Math.PI);
-          piece("sparkle", 0, { ax: CLASH_X, ay: GROUND - 13, scale: s * 1.3 });
-          piece("sparkle", 0, { ax: CLASH_X - 3, ay: GROUND - 17, scale: s * 0.7 });
+          piece("sparkle", 0, { ax: CLASH_X, ay: GROUND - 26, scale: s * 2.2 });
+          piece("sparkle", 0, { ax: CLASH_X - 6, ay: GROUND - 33, scale: s * 1.2 });
         }
 
         // ---- 小貓：帶隊走進來 → 揮手叫停 → 站著拋名牌 → 帶頭走出畫面 ----
@@ -694,7 +724,8 @@
           walkPose(cat, (t - WALK0) * Math.PI * 3.6, 1);
           cat.head = "s_head_happy_bow";
         }
-        if (t >= 13.45 && t < 14.4) cat.armRot = path(t, [[13.45, -0.15], [13.65, -1.6, "out"], [13.8, -1.15], [13.95, -1.6], [14.1, -1.15], [14.4, -0.15, "io"]]);
+        const W0 = STOP - 0.35;
+        if (t >= W0 && t < W0 + 0.95) cat.armRot = path(t, [[W0, -0.15], [W0 + 0.2, -1.6, "out"], [W0 + 0.35, -1.15], [W0 + 0.5, -1.6], [W0 + 0.65, -1.15], [W0 + 0.95, -0.15, "io"]]);
         if (t >= DIZZY_END && t < DIZZY_END + 0.6) {
           cat.head = "s_head_happy_bow";
           cat.hop = jump(t, DIZZY_END + 0.1, 0.45, 2.5);
@@ -710,9 +741,12 @@
           if (s > 0 && s < 1) tagFly = { i, s };
           if (t >= t0 + THROW + FLY && t < t0 + STEP - 0.1) cat.head = "s_head_happy_bow";
         });
+        if (peace) {
+          cat.head = "s_head_happy_bow";
+          if (t < PEACE + 0.8) cat.hop = jump(t, PEACE, 0.45, 3);
+        }
         if (t >= GO) {
           cat.x = CAT_X + V * (t - GO);
-          cat.head = "s_head_happy_bow";
           if (cat.x < EXIT_X) walkPose(cat, (t - GO) * Math.PI * 3.6, 1);
         }
         drawCat(cat);
@@ -744,40 +778,42 @@
         // ---- 特效 ----
         // 暈頭轉向的星星（被彈飛的山羊、停手後的四隻）
         const stars = [];
-        if (!stopped && t >= RB_JUMP && t < 8.4) stars.push(rigToWorld(goat, HEAD_TOP.gt));
+        if (!stopped && t >= RB_JUMP && t < 9.9) stars.push(rigToWorld(goat, HEAD_TOP.gt));
         if (dizzy) [sheep, goat, lion, bear].forEach((st) => stars.push(rigToWorld(st, HEAD_TOP[st.kind])));
         stars.forEach((h, n) => {
           for (let i = 0; i < 3; i++) {
             const a = t * 6 + n + (i * Math.PI * 2) / 3;
-            piece("sparkle", 0, { ax: h[0] + Math.cos(a) * 4, ay: h[1] - 2 + Math.sin(a) * 1.3, scale: 0.6 });
+            piece("sparkle", 0, { ax: h[0] + Math.cos(a) * 6, ay: h[1] - 3 + Math.sin(a) * 2, scale: 0.9 });
           }
         });
-        // 哨子吹出來的音符：歪歪扭扭飄上去
-        if (!stopped) {
-          for (let k2 = 0; k2 < 8; k2++) {
-            const t0 = 1.0 + k2 * 1.4;
-            if (t < t0 || t > t0 + 1.2 || (t0 > RB_JUMP - 1.2 && t0 < RB_BALL[1] + 0.3)) continue;
-            const u = (t - t0) / 1.2;
-            const m = rigToWorld({ kind: "rb", fx: RB_X, sx: Math.floor(t0 / 1.2) % 2 ? -1 : 1 }, [12, 13]);
-            const dir = Math.floor(t0 / 1.2) % 2 ? -1 : 1;
-            piece("note", Math.sin(u * 12) * 0.5 + 0.4, { ax: m[0] + dir * u * 6 + Math.sin(u * 9) * 1.2, ay: m[1] - u * 10, scale: 0.8 * Math.sin(Math.min(1, u * 1.5) * Math.PI * 0.5 + 0.5) });
-          }
-        }
-        // 冒冷汗
-        if (!rbTagged && !(t >= RB_JUMP && t < RB_BALL[0])) {
-          const top = rb.ball ? [RB_X + 4, GROUND - 9] : rigToWorld(rb, [3, 9]);
-          for (let i = 0; i < 2; i++) {
-            const u = ((t * 1.3 + i * 0.5) % 1);
-            piece("sweat", 0, { ax: top[0] + (i ? 7 : 0) * (rb.sx || 1), ay: top[1] + u * 4, scale: 0.7 * (1 - u) });
-          }
+        // 冒冷汗：頭的兩側一直滴
+        if (!rbTagged) {
+          const sides = rb.ball ? [[RB_X - 4, GROUND - 9], [RB_X + 5, GROUND - 9]] : [rigToWorld(rb, [0, 8]), rigToWorld(rb, [15, 8])];
+          sides.forEach((top, i) => {
+            for (let j = 0; j < 2; j++) {
+              const u = (t * 1.3 + i * 0.35 + j * 0.5) % 1;
+              piece("sweat", 0, { ax: top[0] + (i ? 1 : -1) * j * 1.5, ay: top[1] + u * 4, scale: 0.7 * (1 - u) });
+            }
+          });
         }
         // 鬆一口氣
         if (rbTagged && t < tagHit(4) + 1.2) {
           const u = (t - tagHit(4) - 0.4) / 0.8;
           if (u > 0) {
-            const m = rigToWorld(rb, [12, 13]);
-            piece("dust", 0, { ax: m[0] - 3 - u * 4, ay: m[1] - u * 3, scale: 0.4 * Math.sin(Math.min(1, u) * Math.PI) });
+            const m = rigToWorld(rb, [7.5, 14]);
+            piece("dust", 0, { ax: m[0] - 2 - u * 4, ay: m[1] - u * 3, scale: 0.4 * Math.sin(Math.min(1, u) * Math.PI) });
           }
+        }
+        // 世界和平：每隻頭上冒愛心飄上去
+        if (t >= PEACE && t < PEACE + 1.6) {
+          const u = (t - PEACE) / 1.6;
+          [sheep, goat, lion, bear, rb].forEach((st, n) => {
+            const h = rigToWorld(st, HEAD_TOP[st.kind]);
+            const s = Math.sin(Math.min(1, u * 1.4) * Math.PI) * (st.k ? 2.6 : 1.6);
+            piece("heart", Math.sin(t * 6 + n) * 0.2, { ax: h[0] + Math.sin(u * 8 + n) * 2, ay: h[1] - 4 - u * 10, scale: s });
+          });
+          // 獅子和棕熊中間冒一顆大愛心
+          piece("heart", 0, { ax: (lion.fx + bear.fx) / 2, ay: GROUND - 46 - u * 4, scale: 3.6 * Math.sin(Math.min(1, u * 1.2) * Math.PI) });
         }
 
         // ---- 名字字卡（固定在畫面下方，不跟鏡頭） ----

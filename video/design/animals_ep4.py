@@ -1,4 +1,5 @@
-"""第四集的動物與道具零件：綿羊、山羊、獅子、棕熊、小白兔（都畫成面向右的側面），以及哨子、音符、汗滴、打架煙霧、腫包。
+"""第四集的動物與道具零件：綿羊、山羊、獅子、棕熊、小白兔（都畫成面向右的側面），以及汗滴、打架煙霧、腫包。
+小白兔另有正面的身體和頭（當裁判時一直面向鏡頭，眼珠是獨立的一格零件，由影片程式畫成亂轉）。
 
 形狀工具與角色框的用法同 animals.py：每隻動物有自己的角色框（寬 x 高，腳底踩在最下面一列），
 零件的 x0/y0 與 pivot 都在框的座標系裡。面向左的角色（山羊、棕熊）由影片程式水平翻面。
@@ -216,6 +217,52 @@ def rabbit_head(kind, ears):
     return crop(g, (7.5, 16))
 
 
+def rabbit_front_body():
+    """正面站著的身體（當裁判時一直面向鏡頭）。"""
+    m = Mask(*RABBIT)
+    m.disk(7.5, 19.6, 4.6, 4.8)
+    m.box(4, 23, 6, 25)              # 兩隻腳
+    m.box(9, 23, 11, 25)
+    m.box(2, 17, 4, 19)              # 縮在身體兩側的小手
+    m.box(11, 17, 13, 19)
+    g = m.outlined("w")
+    paint(g, lambda x, y: 6 <= x <= 9 and 17 <= y <= 22, "s", "w")
+    return crop(g, (7.5, 25))
+
+
+def rabbit_front_head(eyes, ears):
+    """正面的頭。eyes：scared（大眼白，眼珠另外畫、會亂轉）／happy／dizzy。"""
+    m = Mask(16, RABBIT[1])          # 垂耳往兩邊伸，框加寬 2 格
+    m.disk(7.5, 11.2, 6.4, 4.9)
+    m.box(6, 14, 9, 16)              # 脖子
+    if ears == "up":
+        m.stroke([(5.6, 8.6), (4.4, 1.4)], 1.5, 1.3)
+        m.stroke([(9.4, 8.6), (10.6, 1.4)], 1.5, 1.3)
+    else:   # 嚇到往兩邊垂下來
+        m.stroke([(5.2, 8.4), (2.0, 8.0), (0.8, 11.6)], 1.4, 1.2)
+        m.stroke([(9.8, 8.4), (13.0, 8.0), (14.2, 11.6)], 1.4, 1.2)
+    g = m.outlined("w")
+    if ears == "up":
+        paint(g, lambda x, y: 2 <= y <= 6, "p", "w")
+    else:
+        paint(g, lambda x, y: (x <= 2 or x >= 13) and 8 <= y <= 11, "p", "w")
+    if eyes == "scared":
+        for x0 in (3, 9):                # 圓滾滾的大眼白（眼珠由影片程式另外畫）
+            stamp(g, x0, 9, [".oo.", "ohho", "ohho", ".oo."])
+    elif eyes == "happy":
+        for x0 in (4, 9):
+            stamp(g, x0, 10, [".k.", "k.k"])
+    else:
+        for x0 in (4, 9):
+            stamp(g, x0, 10, ["k.k", ".k.", "k.k"])
+    stamp(g, 7, 13, ["nn"])
+    if eyes == "scared":
+        stamp(g, 7, 14, ["kk"])          # 緊張到抿著嘴
+    stamp(g, 3, 13, ["bb"])
+    stamp(g, 11, 13, ["bb"])
+    return crop(g, (7.5, 16))
+
+
 def rabbit_ball():
     """嚇到縮成一顆毛球：耳朵貼在背上、閉緊眼睛。"""
     m = Mask(*RABBIT)
@@ -230,8 +277,6 @@ def rabbit_ball():
 
 
 # ---------- 道具 ----------
-WHISTLE = ["oooo.", "oyyyo", "oyyko", "ooo.."]
-NOTE = ["..oo", "..ko", "..k.", "kkk.", "kk.."]
 SWEAT = [".V.", "VVV", ".V."]
 BUMP = [".oo.", "onno", "onho", "onno"]
 
@@ -266,8 +311,11 @@ def pieces():
     out["br_body"] = bear_body()
     out["rb_body"] = rabbit_body()
     out["rb_ball"] = rabbit_ball()
-    out["whistle"] = grid(WHISTLE, (0, 1))
-    out["note"] = grid(NOTE, (2, 2))
+    out["rb_front_body"] = rabbit_front_body()
+    for eyes in ("scared", "happy", "dizzy"):
+        for ears in ("up", "down"):
+            out["rb_front_" + eyes + "_" + ears] = rabbit_front_head(eyes, ears)
+    out["pupil"] = grid(["k"], (0, 0))
     out["sweat"] = grid(SWEAT, (1, 1))
     out["bump"] = grid(BUMP, (2, 3))
     out["dust"] = dust()
