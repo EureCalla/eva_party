@@ -19,6 +19,7 @@ STATIC = ROOT / "static"
 EPISODES = [
     (1, "第一集", "story.html", "trailer.js"),
     (2, "第二集", "ep2.html", "ep2.js"),
+    (3, "第三集", "ep3.html", "ep3.js"),
 ]
 
 

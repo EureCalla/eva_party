@@ -47,6 +47,7 @@ python app.py
   - 播放列下方是集數按鈕，像影集一樣可以切換；只列已經做好的集數
   - 第一集（28 秒）：小貓包禮物、懷孕、換洋裝、讀邀請函、店門口翻招牌
   - 第二集（30 秒，`static/ep2.js`）：小貓散步遇到狐獴、水獺、長頸鹿圍觀大象吹茶葉蛋，蛋掉到狐獴頭上；小貓拋名牌公布名字（狐獴 Ethan、水獺 Ann、長頸鹿 Charlotte、大象 Allen），大家跟著小貓走出畫面
+  - 第三集（33 秒，`static/ep3.js`）：隊伍繼續前進，遇到蛇捲成一圈當跑步機，松鼠、天竺鼠、倉鼠在裡面跑、矮袋鼠跑得很糟；小貓揮手讓跑步機急停，大家被甩出來，小貓拋名牌公布名字（松鼠 Joy、天竺鼠 Mia、倉鼠 Leo、矮袋鼠 Amber、蛇 Emily），全部加入隊伍走出畫面
 - 邀請函：邀請函規則，加上派對時間與預算
 
 ## 資料
@@ -80,10 +81,12 @@ python app.py
 | `video/index.html` | HyperFrames 根 composition（28 秒） |
 | `video/compositions/story.html` | 第一集動畫主程式；`/*SPRITES*/` 區塊由 `export_pieces.py` 自動產生，不要手改 |
 | `video/compositions/ep2.html` | 第二集動畫主程式（同上） |
+| `video/compositions/ep3.html` | 第三集動畫主程式（同上） |
 | `video/SPEC.md` | 影片規格：配色、動作、分鏡、禁用元素 |
 | `video/design/cat_sprites.py` | 角色點陣原稿，輸出 `character_sheet_v7.png` |
 | `video/design/export_pieces.py` | 紙娃娃零件產生器，注入各集 composition、寫出 `static/sprites.js`，並輸出 `pieces_preview.png` |
 | `video/design/animals.py` | 第二集的動物（狐獴、水獺、長頸鹿、大象）、茶葉蛋、名牌、問號零件 |
+| `video/design/animals_ep3.py` | 第三集的動物（松鼠、天竺鼠、倉鼠、矮袋鼠、捲成跑步機的蛇）零件 |
 | `video/design/encode.py` | 影格轉 mp4（OpenCV，沒有 FFmpeg 時用） |
 | `video/design/cat_smooth.py`、`compare_pixel_vs_smooth_v1.png` | 一般動畫版對照（未採用） |
 | `video/design/reference/` | 原始參考照片 |
@@ -95,7 +98,7 @@ python app.py
 
 ```bash
 python -X utf8 video/design/export_pieces.py   # 重新產生零件，注入各集 composition 並寫出 static/sprites.js
-python tools/build_trailer.py                  # 重新產生各集預告片（static/trailer.js、ep2.js）
+python tools/build_trailer.py                  # 重新產生各集預告片（static/trailer.js、ep2.js、ep3.js）
 ```
 
 各版 mp4 成品（v3～v5，mp4v 編碼）與輸出用的影格暫存檔沒有進版控，仍留在 `D:\xmas-party-invite\renders\`。
