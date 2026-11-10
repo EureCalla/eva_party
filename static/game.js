@@ -237,6 +237,8 @@
   function show(name) {
     Object.keys(screens).forEach((k) => (screens[k].hidden = k !== name));
     document.getElementById("top-btns").hidden = name === "intro";
+    // 預告片要登入（帳號＋暗號）進到禮物牆才看得到
+    document.getElementById("trailer-btn").hidden = name !== "wall";
     if (name !== "wall") document.getElementById("admin-btn").hidden = true;
     if (name === "login") {
       // 公用電腦：不留上一個人的名字與密碼
