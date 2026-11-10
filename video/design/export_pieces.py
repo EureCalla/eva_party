@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
 import animals  # noqa: E402
+import animals_ep3  # noqa: E402
 import cat_sprites as cs  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -36,13 +37,16 @@ PAL.update({
     "V": (191, 221, 245),   # 寶寶藍
 })
 PAL.update(animals.PAL)
+PAL.update(animals_ep3.PAL)
 
 # 零件注入的 composition（每一集一個檔），以及遊戲頁面共用的零件檔
-COMPOSITIONS = ["story.html", "ep2.html"]
+COMPOSITIONS = ["story.html", "ep2.html", "ep3.html"]
 SPRITES_JS = Path(__file__).resolve().parent.parent.parent / "static" / "sprites.js"
-# 第二集公布名字的字卡：(零件名, 動物, 英文名)
+# 第二、三集公布名字的字卡：(零件名, 動物, 英文名)
 NAME_CARDS = [("cap_ethan", "狐獴", "Ethan"), ("cap_ann", "水獺", "Ann"),
-              ("cap_charlotte", "長頸鹿", "Charlotte"), ("cap_allen", "大象", "Allen")]
+              ("cap_charlotte", "長頸鹿", "Charlotte"), ("cap_allen", "大象", "Allen"),
+              ("cap_joy", "松鼠", "Joy"), ("cap_mia", "天竺鼠", "Mia"), ("cap_leo", "倉鼠", "Leo"),
+              ("cap_amber", "矮袋鼠", "Amber"), ("cap_emily", "蛇", "Emily")]
 
 BOW = ["dd...dd", "drd.drd", "drrdrrd", "drd.drd", "dd...dd"]
 ENVELOPE = ["mmmmmmmm", "mcmccmcm", "mccmmccm", "mccTTccm", "mmmmmmmm"]
@@ -420,6 +424,7 @@ def main():
     pieces["sign_back"]["unit"] = 0.5
     pieces["letter"] = letter_card()
     pieces.update(animals.pieces())
+    pieces.update(animals_ep3.pieces())
     for key, animal, name in NAME_CARDS:
         pieces[key] = sign_board([(animal, 15, 12, "T"), (name, 22, 30, "U")], base="X", grain="Y", frame="Q")
         pieces[key]["unit"] = 0.5
