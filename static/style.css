@@ -321,6 +321,7 @@ body.scene-cover #scene { object-fit: cover; }
   border: 2px solid var(--outline);
 }
 #wall.locked .gift { cursor: default; }
+#wall.describe .gift.mine { cursor: pointer; } /* 公布標籤起：點自己的禮物寫描述 */
 
 /* ---------- 管理頁 ---------- */
 .pixel-btn.admin { background: var(--blue); }
@@ -437,4 +438,37 @@ body.scene-cover #scene { object-fit: cover; }
   border: none;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* ---------- 禮物描述 ---------- */
+#desc-input {
+  font: inherit;
+  font-size: 1rem;
+  padding: 8px 10px;
+  color: var(--outline);
+  background: #fff;
+  border: 3px solid var(--outline);
+  border-radius: 0;
+  resize: none;
+}
+.desc-count { margin: -8px 0 0; text-align: right; font-size: 0.85rem; color: var(--blue); }
+.desc-notes { margin: 0; padding-left: 1.2em; font-size: 0.85rem; line-height: 1.5; }
+.desc-notes strong { color: var(--pink); }
+
+/* ---------- 切換階段被擋下：名單 ---------- */
+#stage-block { z-index: 11; } /* 蓋在管理頁上面 */
+.block-names {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.block-names li {
+  padding: 2px 10px;
+  background: var(--dress);
+  border: 2px solid var(--outline);
 }

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import mpivr20_cms as cms
-from models import GameDB
+from models import DESCRIPTION_MAX, GameDB
 
 
 class GameHandler(SimpleHTTPRequestHandler):
@@ -54,6 +54,7 @@ class GameHandler(SimpleHTTPRequestHandler):
             data = self.db.state(self.headers.get("X-Token"))
             data["labels"] = cms.GIFT_LABELS
             data["stages"] = [{"key": k, "name": n} for k, n in cms.STAGES]
+            data["description_max"] = DESCRIPTION_MAX
             self.send_json(data)
         elif self.path == "/api/admin/players":
             if not self.db.is_admin(self.headers.get("X-Token")):
@@ -109,7 +110,7 @@ class GameHandler(SimpleHTTPRequestHandler):
         self.send_json({"result": "ok", **self.admin_people()})
 
     def do_POST(self) -> None:
-        """Handle login, guesses, labels and admin actions."""
+        """Handle login, guesses, labels, descriptions and admin actions."""
         data = self.read_json()
         if self.path == "/api/login":
             token = self.db.login(str(data.get("name", "")), str(data.get("password", "")))
@@ -129,10 +130,16 @@ class GameHandler(SimpleHTTPRequestHandler):
             result = self.db.set_label(self.headers.get("X-Token", ""), str(data.get("label", "")), cms.GIFT_LABELS)
             status = {"ok": 200, "unknown": 401, "invalid": 400, "not_claimed": 409, "locked": 409}[result]
             self.send_json({"result": result}, status)
+        elif self.path == "/api/description":
+            result = self.db.set_description(self.headers.get("X-Token", ""), str(data.get("description", "")))
+            status = {"ok": 200, "unknown": 401, "empty": 400, "too_long": 400, "not_claimed": 409, "locked": 409}
+            self.send_json({"result": result}, status[result])
         elif self.path == "/api/admin/stage":
-            result = self.db.set_stage(self.headers.get("X-Token", ""), str(data.get("stage", "")), cms.STAGE_KEYS)
-            status = {"ok": 200, "forbidden": 403, "invalid": 400}[result]
-            self.send_json({"result": result}, status)
+            result, detail = self.db.set_stage(
+                self.headers.get("X-Token", ""), str(data.get("stage", "")), cms.STAGE_KEYS
+            )
+            status = {"ok": 200, "forbidden": 403, "invalid": 400, "incomplete": 409}[result]
+            self.send_json({"result": result, **detail}, status)
         elif self.path == "/api/admin/players":
             self.admin_players_action(data)
         else:

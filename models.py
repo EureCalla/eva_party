@@ -8,10 +8,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from migrations import m001_add_gift_label, m002_add_permission, m003_add_settings, m004_add_draw_order
+from migrations import (
+    m001_add_gift_label,
+    m002_add_permission,
+    m003_add_settings,
+    m004_add_draw_order,
+    m005_add_gift_description,
+)
 
 PERMISSIONS = ("user", "admin")
 EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
+DESCRIPTION_MAX = 50  # 禮物描述字數上限
+DESCRIBE_STAGES = ("reveal", "exchange")  # 可以寫／改禮物描述的階段
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS players (
@@ -70,6 +78,7 @@ class GameDB:
             m002_add_permission.apply(self.conn)
             m003_add_settings.apply(self.conn)
             m004_add_draw_order.apply(self.conn)
+            m005_add_gift_description.apply(self.conn)
         print(f"[models] DB ready: {db_path}")
 
     def player_count(self) -> int:
@@ -141,7 +150,8 @@ class GameDB:
                 # 之前刪掉的同名使用者：復原成全新的一份禮物
                 self.conn.execute(
                     "UPDATE players SET animal = ?, password = ?, permission = ?, gift_order = ?, claimed_by = NULL, "
-                    "claimed_at = NULL, label = NULL, labeled_at = NULL, is_deleted = 0, deleted_at = NULL WHERE id = ?",
+                    "claimed_at = NULL, label = NULL, labeled_at = NULL, description = NULL, described_at = NULL, "
+                    "is_deleted = 0, deleted_at = NULL WHERE id = ?",
                     (animal, password, permission, order, old["id"]),
                 )
                 new_id = old["id"]
@@ -217,8 +227,8 @@ class GameDB:
             if row is None:
                 raise ValueError("找不到這個使用者")
             self.conn.execute(
-                "UPDATE players SET claimed_by = NULL, claimed_at = NULL, label = NULL, labeled_at = NULL "
-                "WHERE claimed_by = ?",
+                "UPDATE players SET claimed_by = NULL, claimed_at = NULL, label = NULL, labeled_at = NULL, "
+                "description = NULL, described_at = NULL WHERE claimed_by = ?",
                 (player_id,),
             )
             self.conn.execute(
@@ -298,20 +308,57 @@ class GameDB:
         row = self.conn.execute("SELECT value FROM settings WHERE key = 'stage' AND is_deleted = 0").fetchone()
         return row["value"] if row else "seating"
 
-    def set_stage(self, token: str, stage: str, allowed: list[str]) -> str:
-        """Switch the activity stage (admins only); returns ok / forbidden / invalid.
+    def missing_for_stage(self, stage: str, allowed: list[str]) -> tuple[str, list[str]] | None:
+        """Return who is not ready to move into ``stage``: ("label" | "description", names), or None.
+
+        From the reveal stage on, every player needs a claimed gift with a
+        label (players who have not found their gift count as missing). From
+        the exchange stage on, every gift also needs a description. Names are
+        sorted alphabetically.
+        """
+        idx = allowed.index(stage)
+        checks = [
+            ("label", "reveal", "g.label IS NULL"),
+            ("description", "exchange", "g.description IS NULL OR g.description = ''"),
+        ]
+        for kind, from_stage, missing_sql in checks:
+            if from_stage not in allowed or idx < allowed.index(from_stage):
+                continue
+            rows = self.conn.execute(
+                "SELECT p.en_name FROM players p "
+                "LEFT JOIN players g ON g.claimed_by = p.id AND g.is_deleted = 0 "
+                f"WHERE p.is_deleted = 0 AND (g.id IS NULL OR {missing_sql}) "
+                "ORDER BY p.en_name COLLATE NOCASE"
+            ).fetchall()
+            if rows:
+                return kind, [r["en_name"] for r in rows]
+        return None
+
+    def set_stage(self, token: str, stage: str, allowed: list[str]) -> tuple[str, dict[str, Any]]:
+        """Switch the activity stage (admins only); returns (ok / forbidden / invalid / incomplete, detail).
+
+        Moving forward is refused with "incomplete" while someone has no label
+        (for reveal and later) or no description (for exchange and later);
+        detail then holds {"missing": kind, "names": [...]}. Going back is
+        always allowed.
 
         Entering the exchange stage from another stage reshuffles the draw
         order, seeded with the switch time (yyyymmddhhmm), so going back and
         entering again gives a new order.
         """
         if stage not in allowed:
-            return "invalid"
+            return "invalid", {}
         with self.lock:
             player = self.player_by_token(token) if token else None
             if player is None or player["permission"] != "admin":
-                return "forbidden"
+                return "forbidden", {}
             before = self.get_stage()
+            forward = before not in allowed or allowed.index(stage) > allowed.index(before)
+            if forward:
+                missing = self.missing_for_stage(stage, allowed)
+                if missing is not None:
+                    print(f"[models] stage -> {stage} refused: {len(missing[1])} missing {missing[0]}")
+                    return "incomplete", {"missing": missing[0], "names": missing[1]}
             self.conn.execute(
                 "UPDATE settings SET value = ?, updated_at = ?, updated_by = ? WHERE key = 'stage'",
                 (stage, utc_now(), player["id"]),
@@ -320,7 +367,7 @@ class GameDB:
             if stage == EXCHANGE_STAGE and before != EXCHANGE_STAGE:
                 self._shuffle_draw_order(None, player["id"])
         print(f"[models] stage -> {stage} by {player['en_name']}")
-        return "ok"
+        return "ok", {}
 
     def roster_names(self) -> list[str]:
         """Return all player names in alphabetical order, for the login drop-down."""
@@ -364,16 +411,18 @@ class GameDB:
         stage = self.get_stage()
         reveal_labels = stage != "seating"
         rows = self.conn.execute(
-            "SELECT id, animal, claimed_by, label FROM players WHERE is_deleted = 0 ORDER BY gift_order"
+            "SELECT id, animal, claimed_by, label, description FROM players WHERE is_deleted = 0 ORDER BY gift_order"
         ).fetchall()
         player = self.player_by_token(token) if token else None
         my_id = player["id"] if player is not None else None
+        # 描述內容只回給寫的人；其他人只知道寫了沒（寫好的禮物跳得比較快）
         gifts = [
             {
                 "gift_id": r["id"],
                 "animal": r["animal"],
                 "claimed": r["claimed_by"] is not None,
                 "label": r["label"] if reveal_labels or (my_id is not None and r["claimed_by"] == my_id) else None,
+                "described": bool(r["description"]),
             }
             for r in rows
         ]
@@ -385,9 +434,37 @@ class GameDB:
                 "gift_id": mine["id"] if mine else None,
                 "animal": mine["animal"] if mine else None,
                 "label": mine["label"] if mine else None,
+                "description": mine["description"] if mine else None,
                 "is_admin": player["permission"] == "admin",
             }
         return {"stage": stage, "gifts": gifts, "me": me}
+
+    def set_description(self, token: str, text: str) -> str:
+        """Set the description on the caller's gift; returns ok / unknown / empty / too_long / not_claimed / locked.
+
+        Allowed in DESCRIBE_STAGES only, and may be changed any number of
+        times there. Leading and trailing spaces are trimmed.
+        """
+        text = text.strip()
+        if not text:
+            return "empty"
+        if len(text) > DESCRIPTION_MAX:
+            return "too_long"
+        with self.lock:
+            player = self.player_by_token(token)
+            if player is None:
+                return "unknown"
+            if self.get_stage() not in DESCRIBE_STAGES:
+                return "locked"
+            cur = self.conn.execute(
+                "UPDATE players SET description = ?, described_at = ? WHERE claimed_by = ? AND is_deleted = 0",
+                (text, utc_now(), player["id"]),
+            )
+            self.conn.commit()
+        if cur.rowcount == 0:
+            return "not_claimed"
+        print(f"[models] description set: {player['en_name']} ({len(text)} chars)")
+        return "ok"
 
     def set_label(self, token: str, label: str, allowed: list[str]) -> str:
         """Set the label on the gift the caller claimed; returns ok / invalid / not_claimed / unknown / locked."""
