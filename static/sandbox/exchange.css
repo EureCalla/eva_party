@@ -72,3 +72,75 @@
 }
 .ex-note a { color: var(--dress); }
 #ex-seed { margin-left: 0.6em; }
+
+/* 舞台下方：禮物主人修改描述 */
+.ex-desc {
+  max-width: 960px;
+  margin: 14px auto 0;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--cream);
+  border: 4px solid var(--pink-frame);
+  outline: 3px solid var(--outline);
+  box-shadow: 6px 6px 0 var(--deep);
+}
+.ex-desc label { font-size: 0.95rem; }
+.ex-desc label small { margin-left: 0.4em; color: var(--blue); font-weight: 700; }
+.ex-desc-row { display: flex; gap: 10px; align-items: stretch; }
+#ex-desc-input {
+  flex: 1;
+  font: inherit;
+  font-size: 1rem;
+  padding: 6px 10px;
+  color: var(--outline);
+  background: #fff;
+  border: 3px solid var(--outline);
+  border-radius: 0;
+  resize: none;
+}
+.ex-desc-foot { margin: 0; display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; }
+#ex-desc-msg { color: var(--pink); }
+#ex-desc-msg.ok { color: var(--blue); }
+#ex-desc-count { color: var(--blue); }
+
+/* 講話框：疊在舞台上，尾巴尖端對準聚光燈下禮物的頂端（舞台 76 格高，尖端在第 24 格） */
+.ex-stage { position: relative; }
+.ex-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% * 52 / 76 + 12px);
+  transform: translateX(-50%);
+  transform-origin: 50% calc(100% + 12px);
+  width: max-content;
+  max-width: min(64%, 560px);
+  box-sizing: border-box;
+  padding: 0.45em 0.8em;
+  color: var(--outline);
+  background: var(--cream);
+  border: 3px solid var(--outline);
+  box-shadow: 4px 4px 0 var(--deep);
+  font-size: clamp(0.78rem, 2.3vw, 1.2rem);
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+/* 尾巴：描邊三角＋奶油白三角，硬邊 */
+.ex-bubble::before,
+.ex-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border-style: solid;
+  border-color: transparent;
+}
+.ex-bubble::before { top: 100%; border-width: 13px 10px 0; border-top-color: var(--outline); }
+.ex-bubble::after { top: calc(100% - 1px); border-width: 9px 7px 0; border-top-color: var(--cream); }
+.ex-bubble.pop { animation: bubble-pop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes bubble-pop {
+  from { transform: translateX(-50%) scale(0); }
+  to { transform: translateX(-50%) scale(1); }
+}

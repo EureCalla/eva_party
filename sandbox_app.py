@@ -8,24 +8,46 @@ import sys
 from functools import partial
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import mpivr20_cms as cms
 from app import lan_ip
 from game_server import GameHandler, GameServer
 from introduce import Introduce
 from models import GameDB
-from tools.build_sandbox_db import build
+from tools.build_sandbox_db import build, fill_sample_descriptions
+
+# 夾進首頁的沙盒橋接：階段是交換禮物遊戲時，從首頁帶到聚光燈頁
+BRIDGE_TAG = '<script src="/sandbox/sandbox_bridge.js"></script>'
 
 
 class SandboxHandler(GameHandler):
     """GameHandler plus sandbox-only APIs that the real server does not expose."""
 
     def do_GET(self) -> None:
-        """Serve the draw order (sandbox DB only), otherwise behave like GameHandler."""
-        if self.path == "/api/draw_order":
+        """Serve the draw order (sandbox DB only) and the bridged home page, otherwise behave like GameHandler."""
+        path = urlsplit(self.path).path
+        if path == "/api/draw_order":
             self.send_json({"order": self.db.draw_order(), "seed": self.db.get_setting("draw_seed", "")})
+        elif path in ("/", "/index.html"):
+            self.send_home()
         else:
             super().do_GET()
+
+    def send_home(self) -> None:
+        """Serve the real index.html with the sandbox bridge script added to <head>.
+
+        The bridge sends players to the spotlight page once the stage is the
+        exchange stage, so game.js itself stays untouched.
+        """
+        html = (Path(self.directory) / "index.html").read_text(encoding="utf-8")
+        html = html.replace("<head>", "<head>\n  " + BRIDGE_TAG, 1)
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
 
 class SandboxServer(GameServer):
@@ -55,6 +77,7 @@ def main() -> None:
     if not db.has_draw_order():
         print("[sandbox] 沙盒 DB 還沒有抽獎順序，隨機洗一次")
         db.shuffle_draw_order()
+    fill_sample_descriptions(db.conn)  # 沙盒 DB 裡還沒寫描述的禮物補上測試描述
     print(f"[sandbox] players in DB: {db.player_count()}, stage: {db.get_stage()}")
     server = SandboxServer(cms.HOST, cms.SANDBOX_PORT, cms.STATIC_DIR, db)
     print(f"[sandbox] 本機：http://localhost:{cms.SANDBOX_PORT}{cms.SANDBOX_PAGE}")

@@ -20,6 +20,7 @@ PERMISSIONS = ("user", "admin")
 EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
 DESCRIPTION_MAX = 50  # 禮物描述字數上限
 DESCRIBE_STAGES = ("reveal", "exchange")  # 可以寫／改禮物描述的階段
+DESCRIPTION_PUBLIC_STAGES = ("exchange", "feast")  # 描述對所有人公開的階段（聚光燈講話框）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS players (
@@ -406,26 +407,32 @@ class GameDB:
 
         During the seating stage only the caller's own gift carries its label;
         from the reveal stage on, every label is visible. Everyone always sees
-        which gifts are claimed.
+        which gifts are claimed. Descriptions are private (only ``described``
+        is shared) until DESCRIPTION_PUBLIC_STAGES, where every gift carries
+        its description for the spotlight speech bubble.
         """
         stage = self.get_stage()
         reveal_labels = stage != "seating"
+        public_desc = stage in DESCRIPTION_PUBLIC_STAGES
         rows = self.conn.execute(
             "SELECT id, animal, claimed_by, label, description FROM players WHERE is_deleted = 0 ORDER BY gift_order"
         ).fetchall()
         player = self.player_by_token(token) if token else None
         my_id = player["id"] if player is not None else None
-        # 描述內容只回給寫的人；其他人只知道寫了沒（寫好的禮物跳得比較快）
-        gifts = [
-            {
+        # 公布標籤階段：描述內容只回給寫的人，其他人只知道寫了沒（寫好的禮物跳得比較快）
+        # 交換禮物起：描述公開，聚光燈下的禮物用講話框顯示
+        gifts = []
+        for r in rows:
+            gift = {
                 "gift_id": r["id"],
                 "animal": r["animal"],
                 "claimed": r["claimed_by"] is not None,
                 "label": r["label"] if reveal_labels or (my_id is not None and r["claimed_by"] == my_id) else None,
                 "described": bool(r["description"]),
             }
-            for r in rows
-        ]
+            if public_desc:
+                gift["description"] = r["description"]
+            gifts.append(gift)
         me: dict[str, Any] | None = None
         if player is not None:
             mine = next((r for r in rows if r["claimed_by"] == player["id"]), None)

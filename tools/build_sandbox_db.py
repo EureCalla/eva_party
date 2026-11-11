@@ -10,8 +10,9 @@ stage screens can be designed without touching the real DB. Usage:
 
 The real DB is only copied, never opened for writing. On the copy, every
 migration of the current code is applied (so the format matches models.py),
-login sessions are cleared, the stage is switched to the sandbox stage, and
-the draw order is shuffled anew (the real DB's order is never carried over).
+login sessions are cleared, the stage is switched to the sandbox stage, the
+draw order is shuffled anew (the real DB's order is never carried over), and
+gifts without a description get a sample one marked （測試）.
 Players, claims and labels are kept as they were in the real DB.
 """
 
@@ -26,6 +27,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import mpivr20_cms as cms  # noqa: E402
 from models import GameDB  # noqa: E402
+
+
+# 沙盒測試用的禮物描述：只填在沙盒 DB 裡還沒寫描述的禮物，讓講話框有內容可看
+SAMPLE_DESCRIPTIONS = [
+    "（測試）軟軟的，抱起來很舒服",
+    "（測試）每天早上都用得到",
+    "（測試）放在桌上會讓人心情變好",
+    "（測試）冬天特別需要它",
+    "（測試）吃了會很開心，但要小心熱量",
+    "（測試）小小一個，功能很多",
+    "（測試）聞起來香香的",
+    "（測試）適合送給忙碌的你，下班後用最剛好",
+]
+
+
+def fill_sample_descriptions(conn: sqlite3.Connection) -> int:
+    """Give every gift without a description a sample one (sandbox DB only); returns how many were filled."""
+    rows = conn.execute(
+        "SELECT id FROM players WHERE is_deleted = 0 AND (description IS NULL OR description = '') ORDER BY id"
+    ).fetchall()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    conn.executemany(
+        "UPDATE players SET description = ?, described_at = ? WHERE id = ?",
+        [(SAMPLE_DESCRIPTIONS[i % len(SAMPLE_DESCRIPTIONS)], now, r[0]) for i, r in enumerate(rows)],
+    )
+    conn.commit()
+    if rows:
+        print(f"[sandbox_db] sample descriptions filled: {len(rows)}")
+    return len(rows)
 
 
 def build(source: Path, target: Path, stage: str) -> None:
@@ -55,6 +85,7 @@ def build(source: Path, target: Path, stage: str) -> None:
         )
         conn.commit()
         db.shuffle_draw_order()  # 測試庫自己洗一次，不沿用正式 DB 的抽獎順序
+        fill_sample_descriptions(conn)
         players = db.player_count()
         claimed = conn.execute(
             "SELECT COUNT(*) FROM players WHERE claimed_by IS NOT NULL AND is_deleted = 0"

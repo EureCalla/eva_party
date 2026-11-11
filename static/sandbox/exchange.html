@@ -41,13 +41,23 @@
     </header>
     <!-- 聚光燈輪轉：左＝剛抽過、中＝聚光燈下抽到的、右＝待命下一個 -->
     <div class="ex-stage">
-      <canvas id="ex-spot" width="1280" height="640"></canvas>
+      <canvas id="ex-spot" width="1280" height="760"></canvas>
+      <div id="ex-bubble" class="ex-bubble" hidden></div>
     </div>
     <div class="ex-ctrl">
       <span id="ex-count"></span>
       <button id="ex-reset" type="button" class="pixel-btn small ex-plain">重來</button>
       <button id="ex-next" type="button" class="pixel-btn small">下一個</button>
     </div>
+    <!-- 禮物主人才看得到：隨時修改自己禮物的描述，送出後大家的講話框都會更新 -->
+    <form id="ex-desc" class="ex-desc" hidden>
+      <label for="ex-desc-input">我的禮物描述<small>（只有你能修改，送出後大家都看得到）</small></label>
+      <div class="ex-desc-row">
+        <textarea id="ex-desc-input" rows="2" maxlength="50" required></textarea>
+        <button type="submit" class="pixel-btn small">送出</button>
+      </div>
+      <p class="ex-desc-foot"><span id="ex-desc-msg"></span><span id="ex-desc-count">0 / 50</span></p>
+    </form>
     <p class="ex-note">沙盒驗收用：「下一個」或鍵盤 → ／空白鍵輪轉；順序為測試庫的抽獎順序，到 <a href="/">首頁</a> 用管理頁切回別的階段再切進「交換禮物遊戲」會重新洗牌。<span id="ex-seed"></span></p>
   </section>
 

@@ -207,20 +207,20 @@
   });
 
   // ---------- 交換禮物遊戲：聚光燈輪轉 ----------
-  // 舞台世界 128 x 64 格，一格 10 px；左＝剛抽過、中＝聚光燈下、右＝待命
+  // 舞台世界 128 x 76 格，一格 10 px；左＝剛抽過、中＝聚光燈下、右＝待命；上方留給講話框
   const SPOT_CELL = 10;
   const SPOT_W = 128;
-  const SPOT_H = 64;
-  const FLOOR_Y = 47;
+  const SPOT_H = 76;
+  const FLOOR_Y = 59;
   const TURN_SEC = 0.9; // 輪轉一格的時間
   const BOX = 16; // gift_box 點陣邊長
   // 相對位置 → 擺放（x 中心、底部 y、縮放、透明度）；-2 / 2 在畫面外
   const SLOTS = {
-    "-2": { x: -16, y: 50, s: 1.3, a: 0.75 },
-    "-1": { x: 22, y: 50, s: 1.3, a: 0.75 },
-    "0": { x: 64, y: 52, s: 2.4, a: 1 },
-    "1": { x: 106, y: 50, s: 1.3, a: 0.75 },
-    "2": { x: 144, y: 50, s: 1.3, a: 0.75 },
+    "-2": { x: -16, y: 62, s: 1.3, a: 0.75 },
+    "-1": { x: 22, y: 62, s: 1.3, a: 0.75 },
+    "0": { x: 64, y: 64, s: 2.4, a: 1 },
+    "1": { x: 106, y: 62, s: 1.3, a: 0.75 },
+    "2": { x: 144, y: 62, s: 1.3, a: 0.75 },
   };
   const exEl = document.getElementById("exchange");
   const spot = document.getElementById("ex-spot");
@@ -275,13 +275,13 @@
     pctx.beginPath();
     pctx.moveTo(59, 0);
     pctx.lineTo(69, 0);
-    pctx.lineTo(88, 53);
-    pctx.lineTo(40, 53);
+    pctx.lineTo(88, 65);
+    pctx.lineTo(40, 65);
     pctx.closePath();
     pctx.fill();
     pctx.fillStyle = "rgba(255, 246, 234, 0.4)";
     pctx.beginPath();
-    pctx.ellipse(64, 52.5, 24, 3.6, 0, 0, Math.PI * 2);
+    pctx.ellipse(64, 64.5, 24, 3.6, 0, 0, Math.PI * 2);
     pctx.fill();
     P(58, 0, 12, 2, "#6B5A55");
     P(59, 2, 10, 1, "#FFF6EA");
@@ -312,6 +312,31 @@
     pctx.globalAlpha = 1;
   }
 
+  // ---------- 講話框：聚光燈下的禮物停好後彈出，內容是它的描述 ----------
+  // 用疊在舞台上的 HTML（文字清楚、手機字級可調），輪轉中收起
+  const bubbleEl = document.getElementById("ex-bubble");
+  let bubbleKey = null; // 目前顯示的「第幾個＋描述」，變了才重新彈出
+
+  function syncBubble(show) {
+    const g = order[cur];
+    if (!show || !g) {
+      bubbleEl.hidden = true;
+      bubbleKey = null;
+      return;
+    }
+    const text = g.description || "（還沒有描述）";
+    const key = cur + "|" + g.gift_id + "|" + text;
+    if (key === bubbleKey) return;
+    const changedTextOnly = bubbleKey !== null && bubbleKey.startsWith(cur + "|" + g.gift_id + "|");
+    bubbleKey = key;
+    bubbleEl.textContent = text;
+    bubbleEl.hidden = false;
+    if (changedTextOnly) return; // 主人改了描述：直接換字，不重新彈
+    bubbleEl.classList.remove("pop");
+    void bubbleEl.offsetWidth;
+    bubbleEl.classList.add("pop");
+  }
+
   function spotFrame(ms) {
     let view = cur;
     if (turnStart !== null) {
@@ -335,6 +360,7 @@
       const bob = Math.abs(pos) < 0.05 ? Math.abs(Math.sin((ms / 1000) * 2.4)) * 0.6 : 0;
       drawSpotGift(g, sl.x, sl.y, sl.s, sl.a, bob);
     });
+    syncBubble(turnStart === null);
     requestAnimationFrame(spotFrame);
   }
 
@@ -408,7 +434,52 @@
     order = data.gifts.slice().sort((a, b) => at(a) - at(b));
     cur = Math.min(cur, Math.max(0, order.length - 1));
     updateCount();
+    if (data.description_max) descMax = data.description_max;
+    showMyDesc(me);
   }
+
+  // ---------- 舞台下方：禮物主人修改自己的描述 ----------
+  const descForm = document.getElementById("ex-desc");
+  const descInput = document.getElementById("ex-desc-input");
+  const descCount = document.getElementById("ex-desc-count");
+  const descMsg = document.getElementById("ex-desc-msg");
+  const DESC_ERRORS = {
+    empty: "請先寫一點描述",
+    too_long: "描述太長了",
+    locked: "現在不能修改描述了",
+    not_claimed: "你還沒有認領禮物",
+  };
+  let descMax = 50;
+  let descDirty = false; // 正在打字時，輪詢不要蓋掉輸入框
+
+  function updateDescCount() {
+    descCount.textContent = descInput.value.trim().length + " / " + descMax;
+  }
+  function descNotice(text, ok) {
+    descMsg.textContent = text || "";
+    descMsg.classList.toggle("ok", !!ok);
+  }
+  function showMyDesc(me) {
+    descForm.hidden = !(me && me.gift_id);
+    if (descForm.hidden || descDirty) return;
+    descInput.maxLength = descMax;
+    descInput.value = me.description || "";
+    updateDescCount();
+  }
+  descInput.addEventListener("input", () => {
+    descDirty = true;
+    descNotice("");
+    updateDescCount();
+  });
+  descForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const r = await api("/api/description", { description: descInput.value });
+    if (!r.ok) return descNotice(DESC_ERRORS[r.data.result] || "送出失敗");
+    descDirty = false;
+    descNotice("已更新，大家的講話框都會換成新的描述", true);
+    const s = await api("/api/state");
+    if (s.ok) await refresh(s.data);
+  });
 
   // 抽獎順序：沙盒 server 才有這支 API，只讀測試庫
   // 管理頁重新切進交換禮物階段會換一組順序（洗牌碼＝切換時間 yyyymmddhhmm），換了就從第一個重新開始
@@ -422,6 +493,7 @@
     if (changed) {
       cur = 0;
       turnStart = null;
+      bubbleKey = null; // 講話框重新彈出
       console.log("[exchange] draw order loaded, seed", r.data.seed);
     }
   }
@@ -448,9 +520,40 @@
     for (let i = 0; i < AUTO_TURN; i++) setTimeout(() => turnTo(cur + 1), AUTO_GAP * (i + 1));
     setInterval(async () => {
       const r = await api("/api/state");
-      if (r.ok) await refresh(r.data);
+      if (!r.ok) return;
+      // 管理者把階段切走：回首頁（禮物牆）。首頁不記登入，要重新登入
+      if (r.data.stage !== EXCHANGE_STAGE) {
+        console.log("[exchange] stage changed to", r.data.stage, "back to home");
+        location.href = "/";
+        return;
+      }
+      await refresh(r.data);
     }, POLL_MS);
   }
 
-  loadRoster();
+  // 從首頁帶過來（sandbox_bridge.js）：接手登入 token，讀完即刪，重新整理一樣要重新登入
+  const EXCHANGE_STAGE = "exchange";
+  const HANDOFF_KEY = "sandbox_handoff_token";
+  async function takeHandoff() {
+    let token = null;
+    try {
+      token = sessionStorage.getItem(HANDOFF_KEY);
+      sessionStorage.removeItem(HANDOFF_KEY);
+    } catch (e) {
+      /* 拿不到 storage 就走登入 */
+    }
+    if (!token) return false;
+    sessionToken = token;
+    const s = await api("/api/state");
+    if (!s.ok || !s.data.me) {
+      sessionToken = null;
+      return false;
+    }
+    await enterExchange(s.data);
+    return true;
+  }
+
+  takeHandoff().then((ok) => {
+    if (!ok) loadRoster();
+  });
 })();
