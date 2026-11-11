@@ -1,0 +1,74 @@
+/* 沙盒・交換禮物遊戲：共用 ../style.css 的色票與元件，這裡只放本頁新增的部分 */
+
+#sandbox-badge {
+  position: fixed;
+  top: 12px;
+  left: 16px;
+  z-index: 5;
+  padding: 2px 10px;
+  color: var(--cream);
+  background: var(--blue);
+  border: 3px solid var(--outline);
+  box-shadow: 3px 3px 0 var(--deep);
+  font-size: 0.9rem;
+  letter-spacing: 0.1em;
+}
+
+#login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+#exchange {
+  background:
+    repeating-linear-gradient(to bottom, var(--wall) 0 56px, var(--wall-line) 56px 64px);
+  padding: 12px 16px 40px;
+}
+#ex-hint {
+  margin: 4px 0 4px;
+  color: var(--cream);
+  font-size: clamp(1rem, 4vw, 1.4rem);
+  letter-spacing: 0.08em;
+}
+#ex-me {
+  margin: 0 0 16px;
+  color: var(--dress);
+  font-size: clamp(0.85rem, 3.4vw, 1.05rem);
+}
+
+/* 聚光燈舞台：canvas 畫整個場景，CSS 只負責外框 */
+.ex-stage {
+  max-width: 960px;
+  margin: 0 auto 16px;
+  border: 6px solid var(--pink-frame);
+  outline: 3px solid var(--outline);
+  box-shadow: 6px 6px 0 var(--deep);
+  line-height: 0;
+}
+#ex-spot { width: 100%; image-rendering: pixelated; }
+
+.ex-ctrl {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+#ex-count { margin-right: auto; color: var(--cream); font-size: 1rem; letter-spacing: 0.08em; }
+.pixel-btn.ex-plain { background: var(--cream); color: var(--deep); }
+.ex-note {
+  max-width: 960px;
+  margin: 10px auto 0;
+  color: var(--cream-line);
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+@media (max-width: 760px) {
+  #exchange { padding-top: 56px; }
+}
+.ex-note a { color: var(--dress); }
+#ex-seed { margin-left: 0.6em; }

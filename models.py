@@ -1,5 +1,6 @@
 """SQLite storage for players, sessions and gift claims."""
 
+import random
 import secrets
 import sqlite3
 import threading
@@ -7,9 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from migrations import m001_add_gift_label, m002_add_permission, m003_add_settings
+from migrations import m001_add_gift_label, m002_add_permission, m003_add_settings, m004_add_draw_order
 
 PERMISSIONS = ("user", "admin")
+EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS players (
@@ -43,6 +45,11 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def draw_seed_now() -> str:
+    """Return the current local time as 'yyyymmddhhmm', the seed for shuffling the draw order."""
+    return datetime.now().strftime("%Y%m%d%H%M")
+
+
 class GameDB:
     """Players, login sessions and gift claims.
 
@@ -62,11 +69,56 @@ class GameDB:
             m001_add_gift_label.apply(self.conn)
             m002_add_permission.apply(self.conn)
             m003_add_settings.apply(self.conn)
+            m004_add_draw_order.apply(self.conn)
         print(f"[models] DB ready: {db_path}")
 
     def player_count(self) -> int:
         """Return how many active players exist."""
         return self.conn.execute("SELECT COUNT(*) FROM players WHERE is_deleted = 0").fetchone()[0]
+
+    def has_draw_order(self) -> bool:
+        """Return True when any active gift already has a draw position."""
+        row = self.conn.execute(
+            "SELECT 1 FROM players WHERE draw_order IS NOT NULL AND is_deleted = 0 LIMIT 1"
+        ).fetchone()
+        return row is not None
+
+    def shuffle_draw_order(self, seed: str | None = None, by: int | None = None) -> str:
+        """Shuffle the draw order from ``seed`` (default: now as yyyymmddhhmm); returns the seed used."""
+        with self.lock:
+            return self._shuffle_draw_order(seed, by)
+
+    def _shuffle_draw_order(self, seed: str | None, by: int | None) -> str:
+        """Shuffle every active gift's draw position (0-based) and record the seed; caller holds the lock.
+
+        The same seed always gives the same order (gifts are shuffled from id
+        order), so the order can be reproduced from settings.draw_seed. Neither
+        the order nor the seed is printed. Deleted gifts get NULL.
+        """
+        seed = seed or draw_seed_now()
+        ids = [r["id"] for r in self.conn.execute("SELECT id FROM players WHERE is_deleted = 0 ORDER BY id")]
+        random.Random(seed).shuffle(ids)
+        self.conn.execute("UPDATE players SET draw_order = NULL")
+        self.conn.executemany(
+            "UPDATE players SET draw_order = ? WHERE id = ?", [(i, gift_id) for i, gift_id in enumerate(ids)]
+        )
+        self.conn.execute(
+            "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('draw_seed', ?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, "
+            "updated_by = excluded.updated_by",
+            (seed, utc_now(), by),
+        )
+        self.conn.commit()
+        print(f"[models] draw order shuffled: {len(ids)} gifts")
+        return seed
+
+    def draw_order(self) -> list[int]:
+        """Return active gift ids in draw order; gifts without a position (added later) go last."""
+        rows = self.conn.execute(
+            "SELECT id FROM players WHERE is_deleted = 0 "
+            "ORDER BY draw_order IS NULL, draw_order, gift_order"
+        ).fetchall()
+        return [r["id"] for r in rows]
 
     def add_player(self, en_name: str, animal: str, password: str, permission: str = "user") -> int:
         """Add a player (and their gift) after the existing gifts; returns the new id.
@@ -247,18 +299,26 @@ class GameDB:
         return row["value"] if row else "seating"
 
     def set_stage(self, token: str, stage: str, allowed: list[str]) -> str:
-        """Switch the activity stage (admins only); returns ok / forbidden / invalid."""
+        """Switch the activity stage (admins only); returns ok / forbidden / invalid.
+
+        Entering the exchange stage from another stage reshuffles the draw
+        order, seeded with the switch time (yyyymmddhhmm), so going back and
+        entering again gives a new order.
+        """
         if stage not in allowed:
             return "invalid"
         with self.lock:
             player = self.player_by_token(token) if token else None
             if player is None or player["permission"] != "admin":
                 return "forbidden"
+            before = self.get_stage()
             self.conn.execute(
                 "UPDATE settings SET value = ?, updated_at = ?, updated_by = ? WHERE key = 'stage'",
                 (stage, utc_now(), player["id"]),
             )
             self.conn.commit()
+            if stage == EXCHANGE_STAGE and before != EXCHANGE_STAGE:
+                self._shuffle_draw_order(None, player["id"])
         print(f"[models] stage -> {stage} by {player['en_name']}")
         return "ok"
 

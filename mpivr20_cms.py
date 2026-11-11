@@ -23,3 +23,11 @@ STAGES: list[tuple[str, str]] = [
     ("feast", "共享盛宴"),
 ]
 STAGE_KEYS: list[str] = [k for k, _ in STAGES]
+
+# 沙盒：設計新階段畫面用，與正式 server／正式 DB 完全分開，驗收後才合併
+# sandbox.db 由 tools/build_sandbox_db.py 從正式 DB 唯讀複製產生，不進版控（.gitignore 的 *.db）
+SANDBOX_DIR: Path = ROOT_DIR / "sandbox"
+SANDBOX_DB_PATH: Path = SANDBOX_DIR / "sandbox.db"
+SANDBOX_PORT: int = 8478
+SANDBOX_STAGE: str = "exchange"  # 沙盒 DB 建好後直接切到這個階段
+SANDBOX_PAGE: str = "/sandbox/exchange.html"  # 沙盒畫面，放在 static/sandbox/

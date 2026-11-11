@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>沙盒・交換禮物遊戲</title>
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="exchange.css">
+</head>
+<body>
+  <!-- 沙盒：python sandbox_app.py（port 8478），只連 sandbox/sandbox.db，與正式畫面無關 -->
+  <div id="sandbox-badge">沙盒</div>
+
+  <canvas id="scene" width="1920" height="1080"></canvas>
+
+  <!-- 登入：與正式版相同的帳號與暗號 -->
+  <section id="login" class="screen">
+    <form id="login-card" class="card">
+      <h1 class="card-title">好孕敲門</h1>
+      <p class="card-sub">交換禮物遊戲（沙盒）</p>
+      <label>你是誰？
+        <select id="login-name" required>
+          <option value="" disabled selected>選擇你的名字</option>
+        </select>
+      </label>
+      <label>暗號
+        <input id="login-password" type="password" autocomplete="off" required>
+      </label>
+      <p id="login-error" class="error" hidden></p>
+      <button type="submit" class="pixel-btn">登入</button>
+    </form>
+  </section>
+
+  <!-- 交換禮物遊戲：目前只有骨架，內容逐項討論後再補 -->
+  <section id="exchange" class="screen" hidden>
+    <header class="wall-head">
+      <canvas id="wall-sign" width="400" height="176"></canvas>
+      <ol id="stage-bar" aria-label="活動進度"></ol>
+      <p id="ex-hint">交換禮物遊戲</p>
+      <p id="ex-me"></p>
+    </header>
+    <!-- 聚光燈輪轉：左＝剛抽過、中＝聚光燈下抽到的、右＝待命下一個 -->
+    <div class="ex-stage">
+      <canvas id="ex-spot" width="1280" height="640"></canvas>
+    </div>
+    <div class="ex-ctrl">
+      <span id="ex-count"></span>
+      <button id="ex-reset" type="button" class="pixel-btn small ex-plain">重來</button>
+      <button id="ex-next" type="button" class="pixel-btn small">下一個</button>
+    </div>
+    <p class="ex-note">沙盒驗收用：「下一個」或鍵盤 → ／空白鍵輪轉；順序為測試庫的抽獎順序，到 <a href="/">首頁</a> 用管理頁切回別的階段再切進「交換禮物遊戲」會重新洗牌。<span id="ex-seed"></span></p>
+  </section>
+
+  <script src="../sprites.js"></script>
+  <script src="exchange.js"></script>
+</body>
+</html>
