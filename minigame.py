@@ -1,7 +1,10 @@
 """Stone-throwing minigame for the gift exchange: one in-memory match, never written to the DB while playing.
 
 Players report their own position (client-side movement, checked here for
-speed and walls); hits, pickups, spawns and the result are decided here.
+speed and walls); hits, pickups, spawns, monsters and the result are decided
+here. Gifts only come from black monsters: every stone that hits one drops a
+gift. Monsters eat stones on the ground to refill their fire and breathe it
+at players (fire hurts like a stone). Idle players just stand still.
 Time advances lazily in fixed steps whenever someone calls in, the same
 no-background-thread approach as the exchange rounds.
 """
@@ -56,14 +59,29 @@ STONE_SPEED_MAX = 15.0
 HIT_RADIUS = 0.5
 INVULN_SEC = 0.6  # 被打中後的無敵時間
 PICK_RADIUS = 0.6
-START_STONES = 8  # 開場地上的石頭
+START_STONES = 10  # 開場地上的石頭
 SPAWN_EVERY = 1.5
-ITEM_CAPS: dict[str, int] = {"stone": 12, "gift": 4, "heal": 2}
-SPAWN_WEIGHTS: dict[str, int] = {"stone": 3, "gift": 2, "heal": 1}
+# 地上隨機生成的只有石頭與補血；禮物只從黑色怪物身上打下來
+ITEM_CAPS: dict[str, int] = {"stone": 12, "heal": 2}
+SPAWN_WEIGHTS: dict[str, int] = {"stone": 3, "heal": 1}
 FRAME_EVERY = 0.2  # 直播緩衝每幾秒存一格
 FRAME_KEEP = 4.0  # 直播緩衝保留幾秒
-BOT_IDLE_SEC = 3.0  # 沙盒機器人：多久沒送操作就接手
-BOT_SPEED = 0.75  # 機器人移動速度比例
+
+# 黑色怪物：石頭打中一次掉一個禮物；吃地上的石頭補火，朝 8 方向上的玩家噴火（扣 1 血，跟石頭一樣）
+MONSTER_MAX = 2  # 場上最多幾隻
+MONSTER_HP = 3  # 打幾下會消失
+MONSTER_FIRST_SEC = 5.0  # 開打後幾秒出現第一隻
+MONSTER_RESPAWN_SEC = 6.0  # 少一隻後幾秒補一隻
+MONSTER_RADIUS = 0.45  # 碰撞半徑
+MONSTER_HIT_RADIUS = 0.65  # 石頭打中的距離（比人大一點，好打）
+MONSTER_SPEED = 2.2
+MONSTER_AMMO_MAX = 3  # 最多存幾發火
+MONSTER_START_AMMO = 1
+MONSTER_KEEP_DIST = 3.0  # 有火時靠近玩家到這個距離就停
+FIRE_COOLDOWN = 2.0
+FIRE_SPEED = 9.0
+FIRE_RANGE = 7.0
+FIRE_AIM_OFF = 0.6  # 玩家離 8 方向射線多近才噴
 
 
 def stone_range(power: float) -> float:
@@ -95,6 +113,7 @@ def map_info() -> dict[str, Any]:
         "charge_sec": CHARGE_SEC, "stone_range_min": STONE_RANGE_MIN, "stone_range_max": STONE_RANGE_MAX,
         "stone_speed_min": STONE_SPEED_MIN, "stone_speed_max": STONE_SPEED_MAX, "max_stones": MAX_STONES,
         "throw_cooldown": THROW_COOLDOWN, "pick_radius": PICK_RADIUS, "hit_radius": HIT_RADIUS,
+        "monster_hit_radius": MONSTER_HIT_RADIUS, "monster_hp": MONSTER_HP, "monster_ammo_max": MONSTER_AMMO_MAX,
         "frame_every": FRAME_EVERY,
     }
 
@@ -116,7 +135,7 @@ class StoneBattle:
 
     def __init__(
         self, players: list[dict[str, Any]], prep_epoch: float, prep_sec: float, play_sec: float,
-        hp: int, bots: bool = False, rng: random.Random | None = None,
+        hp: int, rng: random.Random | None = None,
     ) -> None:
         """Place ``players`` ([{id, name, label}]) on the spawn points and scatter the first stones."""
         self.rng = rng or random.SystemRandom()
@@ -124,7 +143,6 @@ class StoneBattle:
         self.play_start = prep_epoch + prep_sec
         self.play_end = self.play_start + play_sec
         self.max_hp = hp
-        self.bots = bots
         self.t = self.play_start  # 模擬時間
         self.finished_at: float | None = None
         self.ranking: list[dict[str, Any]] | None = None
@@ -136,7 +154,7 @@ class StoneBattle:
             self.players[p["id"]] = {
                 "id": p["id"], "x": x, "y": y, "fx": fx, "fy": fy, "hp": hp, "gifts": 0, "stones": 0,
                 "alive": True, "inv_until": 0.0, "died_at": None, "cool_until": 0.0,
-                "checked_at": self.play_start, "budget": 0.5, "seq": -1, "last_input": None, "bot_dir": None, "bot_turn_at": 0.0,
+                "checked_at": self.play_start, "budget": 0.5, "seq": -1,
             }
         self.items: list[dict[str, Any]] = []
         self.shots: list[dict[str, Any]] = []
@@ -144,6 +162,8 @@ class StoneBattle:
         self.next_spawn = self.play_start + SPAWN_EVERY
         for _ in range(START_STONES):
             self._spawn("stone")
+        self.monsters: list[dict[str, Any]] = []
+        self.next_monster = self.play_start + MONSTER_FIRST_SEC
         self.frames: deque[dict[str, Any]] = deque()
         self.next_frame = self.play_start
 
@@ -169,12 +189,13 @@ class StoneBattle:
             self._finish(self.play_end)
 
     def _step(self) -> None:
-        """Advance one fixed step: bots, stones in flight, pickups, spawns, live frames, early end."""
+        """Advance one fixed step: monsters, stones and fire in flight, pickups, spawns, live frames, early end."""
         self.t += DT
-        if self.bots:
-            for p in self.players.values():
-                if p["alive"] and (p["last_input"] is None or self.t - p["last_input"] > BOT_IDLE_SEC):
-                    self._bot(p)
+        if len(self.monsters) < MONSTER_MAX and self.t >= self.next_monster:
+            self._spawn_monster()
+            self.next_monster = self.t + MONSTER_RESPAWN_SEC
+        for m in list(self.monsters):
+            self._monster(m)
         self._move_shots()
         self._pickups()
         while self.t >= self.next_spawn:
@@ -192,7 +213,10 @@ class StoneBattle:
             self._finish(self.t)
 
     def _move_shots(self) -> None:
-        """Fly stones in two half-steps; a stone stops at walls, at the end of its range, or on a player."""
+        """Fly stones and fire in two half-steps; each stops at walls, at the end of its range, or on a target.
+
+        Stones hit players (not the thrower) and monsters; fire only hits players.
+        """
         keep = []
         for s in self.shots:
             hit = False
@@ -212,6 +236,16 @@ class StoneBattle:
                     self._hurt(target)
                     hit = True
                     break
+                if s["kind"] == "stone":
+                    mon = next(
+                        (m for m in self.monsters
+                         if math.hypot(m["x"] - s["x"], m["y"] - s["y"]) < MONSTER_HIT_RADIUS),
+                        None,
+                    )
+                    if mon is not None:
+                        self._hit_monster(mon)
+                        hit = True
+                        break
             if not hit:
                 keep.append(s)
         self.shots = keep
@@ -278,7 +312,7 @@ class StoneBattle:
         vx, vy = p["fx"] / n * speed, p["fy"] / n * speed
         self.shots.append({
             "id": self._next_id, "x": p["x"] + p["fx"] / n * 0.3, "y": p["y"] + p["fy"] / n * 0.3,
-            "vx": vx, "vy": vy, "left": stone_range(power), "owner": p["id"],
+            "vx": vx, "vy": vy, "left": stone_range(power), "owner": p["id"], "kind": "stone",
         })
         self._next_id += 1
         p["stones"] -= 1
@@ -313,45 +347,99 @@ class StoneBattle:
         """Return the winner's player id once the match is over."""
         return self.ranking[0]["id"] if self.ranking else None
 
-    # ---------- 沙盒機器人 ----------
+    # ---------- 黑色怪物 ----------
 
-    def _bot(self, p: dict[str, Any]) -> None:
-        """Simple AI for idle players: fetch stones, chase gifts and heals, throw when lined up."""
-        foes = [q for q in self.players.values() if q["alive"] and q["id"] != p["id"]]
-        if p["stones"] > 0 and self.t >= p["cool_until"]:
+    def _free_spot(self, near: tuple[float, float] | None, r: float, away: float) -> tuple[float, float] | None:
+        """Return a free spot (within 1.5 tiles of ``near`` if given) at least ``away`` from every player."""
+        for _ in range(60):
+            if near is None:
+                x, y = self.rng.randrange(1, MAP_W - 1) + 0.5, self.rng.randrange(1, MAP_H - 1) + 0.5
+            else:
+                a = self.rng.uniform(0, 2 * math.pi)
+                d = self.rng.uniform(0.6, 1.5)
+                x, y = near[0] + math.cos(a) * d, near[1] + math.sin(a) * d
+            if blocked(x, y, r):
+                continue
+            if any(math.hypot(p["x"] - x, p["y"] - y) < away for p in self.players.values() if p["alive"]):
+                continue
+            return x, y
+        return None
+
+    def _spawn_monster(self) -> None:
+        """Put a black monster on a free tile at least 4 tiles from every player."""
+        spot = self._free_spot(None, MONSTER_RADIUS, 4.0)
+        if spot is None:
+            return
+        self.monsters.append({
+            "id": self._next_id, "x": spot[0], "y": spot[1], "hp": MONSTER_HP, "ammo": MONSTER_START_AMMO,
+            "cool_until": self.t + 1.0, "fx": 0, "fy": 1, "dir": None, "turn_at": 0.0, "hurt_until": 0.0,
+        })
+        self._next_id += 1
+
+    def _hit_monster(self, m: dict[str, Any]) -> None:
+        """A stone hit: drop one gift next to the monster; it vanishes after MONSTER_HP hits."""
+        m["hp"] -= 1
+        m["hurt_until"] = self.t + 0.3
+        spot = self._free_spot((m["x"], m["y"]), 0.2, 0.0) or (m["x"], m["y"])
+        self.items.append({"id": self._next_id, "k": "gift", "x": round(spot[0], 2), "y": round(spot[1], 2)})
+        self._next_id += 1
+        if m["hp"] <= 0:
+            self.monsters.remove(m)
+            self.next_monster = max(self.next_monster, self.t + MONSTER_RESPAWN_SEC)
+
+    def _monster(self, m: dict[str, Any]) -> None:
+        """Breathe fire at a lined-up player, eat stones to refill, otherwise close in on the nearest player."""
+        foes = sorted(
+            (q for q in self.players.values() if q["alive"]),
+            key=lambda q: math.hypot(q["x"] - m["x"], q["y"] - m["y"]),
+        )
+        if m["ammo"] > 0 and self.t >= m["cool_until"]:
             for q in foes:
-                dx, dy = q["x"] - p["x"], q["y"] - p["y"]
-                dist = math.hypot(dx, dy)
+                dx, dy = q["x"] - m["x"], q["y"] - m["y"]
                 sx, sy = snap8(dx, dy)
                 n = math.hypot(sx, sy) or 1
-                off = abs(dx * sy / n - dy * sx / n)  # 與 8 方向射線的垂直距離
-                if dist <= STONE_RANGE_MAX and off < 0.4 and self.rng.random() < 0.15:
-                    p["fx"], p["fy"] = sx, sy
-                    power = (dist + 1 - STONE_RANGE_MIN) / (STONE_RANGE_MAX - STONE_RANGE_MIN)  # 剛好丟到對方
-                    self._throw(p, power)
-                    p["cool_until"] = self.t + THROW_COOLDOWN + self.rng.uniform(0.4, 1.2)
-                    return
-        wants = ("stone",) if p["stones"] == 0 else ("gift", "heal") if p["hp"] < self.max_hp else ("gift", "stone")
-        goals = [(i["x"], i["y"]) for i in self.items if i["k"] in wants]
-        if p["stones"] > 0 and foes:
-            goals += [(q["x"], q["y"]) for q in foes]
-        if goals and (p["bot_dir"] is None or self.t >= p["bot_turn_at"]):
-            gx, gy = min(goals, key=lambda g: math.hypot(g[0] - p["x"], g[1] - p["y"]))
-            p["bot_dir"] = snap8(gx - p["x"], gy - p["y"])
-            p["bot_turn_at"] = self.t + 0.3
-        dx, dy = p["bot_dir"] or (0, 0)
-        if (dx, dy) == (0, 0):
+                off = abs(dx * sy / n - dy * sx / n)  # 離 8 方向射線的垂直距離
+                if math.hypot(dx, dy) <= FIRE_RANGE and off < FIRE_AIM_OFF:
+                    m["fx"], m["fy"] = sx, sy
+                    self.shots.append({
+                        "id": self._next_id, "x": m["x"] + sx / n * 0.5, "y": m["y"] + sy / n * 0.5,
+                        "vx": sx / n * FIRE_SPEED, "vy": sy / n * FIRE_SPEED, "left": FIRE_RANGE,
+                        "owner": -m["id"], "kind": "fire",
+                    })
+                    self._next_id += 1
+                    m["ammo"] -= 1
+                    m["cool_until"] = self.t + FIRE_COOLDOWN
+                    break
+        # 吃石頭補火
+        if m["ammo"] < MONSTER_AMMO_MAX:
+            for item in self.items:
+                if item["k"] == "stone" and math.hypot(item["x"] - m["x"], item["y"] - m["y"]) < PICK_RADIUS:
+                    self.items.remove(item)
+                    m["ammo"] += 1
+                    break
+        # 方向：沒火就去吃石頭；有火就靠近最近的玩家（太近就停下來，順便補火）
+        if self.t >= m["turn_at"]:
+            stones = [(i["x"], i["y"]) for i in self.items if i["k"] == "stone"]
+            near_foe = foes[0] if foes else None
+            far = near_foe is not None and math.hypot(near_foe["x"] - m["x"], near_foe["y"] - m["y"]) > MONSTER_KEEP_DIST
+            goal = None
+            if stones and (m["ammo"] == 0 or (m["ammo"] < MONSTER_AMMO_MAX and not far)):
+                goal = min(stones, key=lambda g: math.hypot(g[0] - m["x"], g[1] - m["y"]))
+            elif far:
+                goal = (near_foe["x"], near_foe["y"])
+            m["dir"] = snap8(goal[0] - m["x"], goal[1] - m["y"]) if goal else None
+            m["turn_at"] = self.t + 0.4
+        if not m["dir"]:
             return
-        n = math.hypot(dx, dy)
-        step = SPEED * BOT_SPEED * DT / n
+        dx, dy = m["dir"]
+        step = MONSTER_SPEED * DT / math.hypot(dx, dy)
         for mx, my in ((dx, dy), (dx, 0), (0, dy)):
-            if (mx, my) != (0, 0) and not blocked(p["x"] + mx * step, p["y"] + my * step):
-                p["x"] += mx * step
-                p["y"] += my * step
-                p["fx"], p["fy"] = dx, dy
+            if (mx, my) != (0, 0) and not blocked(m["x"] + mx * step, m["y"] + my * step, MONSTER_RADIUS):
+                m["x"] += mx * step
+                m["y"] += my * step
                 return
-        p["bot_dir"] = self.rng.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])  # 卡住就換個方向
-        p["bot_turn_at"] = self.t + 0.6
+        m["dir"] = self.rng.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])  # 卡住就換方向
+        m["turn_at"] = self.t + 0.6
 
     # ---------- 玩家操作與畫面資料 ----------
 
@@ -371,7 +459,6 @@ class StoneBattle:
             p = self.players.get(pid)
             if p is None:
                 return None
-            p["last_input"] = now
             corrected = False
             if self.phase(now) == "play" and p["alive"]:
                 stale = seq is not None and seq <= p["seq"]
@@ -421,8 +508,15 @@ class StoneBattle:
                  int(p["alive"]), int(self.t < p["inv_until"]), p["stones"]]
                 for p in self.players.values()
             ],
-            "s": [[s["id"], round(s["x"], 2), round(s["y"], 2), round(s["vx"], 2), round(s["vy"], 2), s["owner"]] for s in self.shots],
+            "s": [
+                [s["id"], round(s["x"], 2), round(s["y"], 2), round(s["vx"], 2), round(s["vy"], 2), s["owner"], s["kind"][0]]
+                for s in self.shots
+            ],
             "i": [[i["id"], i["k"], i["x"], i["y"]] for i in self.items],
+            "m": [
+                [m["id"], round(m["x"], 2), round(m["y"], 2), m["hp"], m["ammo"], int(self.t < m["hurt_until"]), m["fx"], m["fy"]]
+                for m in self.monsters
+            ],
         }
 
     def _meta(self, now: float) -> dict[str, Any]:

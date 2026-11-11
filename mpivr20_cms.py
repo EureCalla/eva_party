@@ -31,7 +31,7 @@ START_TICKETS: int = 5
 
 # 小遊戲（丟石頭搶禮物）：倒數結束且有人爭奪時，候選人＋挑戰者進場 PK
 GAME_PREP_SEC: int = 15  # 進場準備：看玩法說明＋3-2-1
-GAME_SEC: int = 60  # 遊戲時間
+GAME_SEC: int = 120  # 遊戲時間（2 分鐘）
 GAME_REVEAL_SEC: int = 5  # 公布結果，之後聚光燈才換下一份
 GAME_HP: int = 5  # 每人血量
 

@@ -202,6 +202,14 @@
       if (mode === "play" && p[0] === meId) return; // 自己的在收到回應時就處理了
       effects.push({ clock: "frame", t: f.t, x: p[1], y: p[2] - 0.6, text: "-1", color: "#E5484D", spark: true });
     });
+    // 黑色怪物被打中：掉一個禮物
+    const mons = new Map((prev.m || []).map((m) => [m[0], m]));
+    (f.m || []).forEach((m) => {
+      const q = mons.get(m[0]);
+      if (q && m[3] < q[3]) effects.push({ clock: "frame", t: f.t, x: m[1], y: m[2] - 0.7, text: "掉禮物！", color: "#DE6A93", spark: true });
+      mons.delete(m[0]);
+    });
+    mons.forEach((m) => effects.push({ clock: "frame", t: f.t, x: m[1], y: m[2] - 0.7, text: "掉禮物！", color: "#DE6A93", spark: true }));
   }
 
   // ---------- 參賽者：送操作、收快照 ----------
@@ -381,14 +389,17 @@
   }
 
   // 自己丟出的石頭：本機飛，撞牆／出射程／碰到別人（畫面上的位置）就停；扣不扣血由伺服器決定
-  function updateMyShots(dt, others) {
+  function updateMyShots(dt, others, monsters) {
     myShots = myShots.filter((s) => {
       for (let i = 0; i < 2; i++) {
         s.x += (s.vx * dt) / 2;
         s.y += (s.vy * dt) / 2;
         s.left -= (Math.hypot(s.vx, s.vy) * dt) / 2;
         if (s.left <= 0 || solid(Math.floor(s.x), Math.floor(s.y))) return false;
-        if (others.some((o) => o.alive && Math.hypot(o.x - s.x, o.y - s.y) < map.hit_radius)) {
+        if (
+          others.some((o) => o.alive && Math.hypot(o.x - s.x, o.y - s.y) < map.hit_radius) ||
+          monsters.some((m) => Math.hypot(m.x - s.x, m.y - s.y) < map.monster_hit_radius)
+        ) {
           effects.push({ clock: "local", t: localSec(), x: s.x, y: s.y, spark: true });
           return false;
         }
@@ -491,6 +502,52 @@
       R(cx - 3, cy + 8, 6, 3, "#E5484D");
       R(cx - 7, cy - 4, 3, 3, "#FFFFFF");
     }
+  }
+
+  // 時間 t 的怪物位置：a→b 內插（只在兩格都有的怪物）
+  function monstersAt(v) {
+    if (!v || !v.a.m) return [];
+    const next = v.b && v.b.m ? new Map(v.b.m.map((m) => [m[0], m])) : null;
+    return v.a.m.map((m) => {
+      const q = next && next.get(m[0]);
+      return { id: m[0], x: q ? lerp(m[1], q[1], v.k) : m[1], y: q ? lerp(m[2], q[2], v.k) : m[2], row: q && v.k > 0.5 ? q : m };
+    });
+  }
+
+  // 黑色怪物：黑方塊＋小角＋紅眼睛（看向面向），頭上血條、腳下火苗＝存了幾發火；被打中閃白
+  function drawMonster(m, x, y, ms) {
+    const [, , , hp, ammo, hurt, fx, fy] = m;
+    const cx = Math.round(px(x));
+    const cy = Math.round(py(y));
+    const bob = Math.round(Math.sin(ms / 220 + m[0]) * 2);
+    R(cx - 16, cy + 16, 32, 5, "rgba(42,26,16,0.3)"); // 影子
+    R(cx - 14, cy - 24 + bob, 6, 6, "#1A1210"); // 角
+    R(cx + 8, cy - 24 + bob, 6, 6, "#1A1210");
+    R(cx - 18, cy - 18 + bob, 36, 34, "#1A1210");
+    R(cx - 16, cy - 16 + bob, 32, 30, hurt ? "#FFFFFF" : "#2B2B33");
+    R(cx - 16, cy + 8 + bob, 32, 6, "rgba(0,0,0,0.25)");
+    R(cx - 11, cy - 8 + bob, 9, 8, "#E5484D");
+    R(cx + 2, cy - 8 + bob, 9, 8, "#E5484D");
+    R(cx - 9 + fx * 2, cy - 6 + fy * 2 + bob, 4, 4, "#FFD86B");
+    R(cx + 4 + fx * 2, cy - 6 + fy * 2 + bob, 4, 4, "#FFD86B");
+    for (let i = 0; i < map.monster_hp; i++) R(cx - 13 + i * 9, cy - 30 + bob, 7, 4, i < hp ? "#E5484D" : "#6B5A55");
+    for (let i = 0; i < ammo; i++) {
+      R(cx - 9 + i * 7, cy + 19, 5, 5, "#F2994A");
+      R(cx - 8 + i * 7, cy + 17, 3, 3, "#FFD86B");
+    }
+  }
+
+  // 火：橘紅火球＋往後拖的尾巴
+  function drawFire(x, y, vx, vy, ms) {
+    const n = Math.hypot(vx, vy) || 1;
+    const tx = -vx / n;
+    const ty = -vy / n;
+    const flick = Math.floor(ms / 60) % 2;
+    R(px(x + tx * 0.5) - 4, py(y + ty * 0.5) - 4, 8, 8, "rgba(229,72,77,0.6)");
+    R(px(x + tx * 0.25) - 6, py(y + ty * 0.25) - 6, 12, 12, "#F2994A");
+    R(px(x) - 9, py(y) - 9, 18, 18, "#E5484D");
+    R(px(x) - 6, py(y) - 6, 12, 12, flick ? "#F2994A" : "#FFB347");
+    R(px(x) - 3, py(y) - 3, 6, 6, "#FFE7A3");
   }
 
   function drawStone(x, y) {
@@ -624,6 +681,7 @@
 
   let lastMs = null;
   let viewPeople = [];
+  let viewMonsters = [];
   function frame(ms) {
     if (!active) return;
     const dt = lastMs === null ? 0 : Math.min(0.1, (ms - lastMs) / 1000);
@@ -637,7 +695,8 @@
     let v = sample(t);
     if (!v && liveFrame) v = { a: liveFrame, b: null, k: 0 };
     viewPeople = peopleAt(v);
-    updateMyShots(dt, viewPeople.filter((o) => o.id !== meId));
+    viewMonsters = monstersAt(v);
+    updateMyShots(dt, viewPeople.filter((o) => o.id !== meId), viewMonsters);
 
     const now = localSec();
     ctx.save();
@@ -653,19 +712,23 @@
     // 別人的石頭：從延遲畫面那格依速度外插；自己的石頭本機畫
     if (v) {
       const st = t - v.a.t;
-      v.a.s.forEach(([, x, y, vx, vy, owner]) => {
+      v.a.s.forEach(([, x, y, vx, vy, owner, kind]) => {
         if (mode === "play" && owner === meId) return;
         const nx = x + vx * st;
         const ny = y + vy * st;
-        if (!solid(Math.floor(nx), Math.floor(ny))) drawStone(nx, ny);
+        if (solid(Math.floor(nx), Math.floor(ny))) return;
+        if (kind === "f") drawFire(nx, ny, vx, vy, ms);
+        else drawStone(nx, ny);
       });
     }
     myShots.forEach((s) => drawStone(s.x, s.y));
     drawCharge();
-    viewPeople
-      .slice()
-      .sort((a, b) => a.y - b.y) // 下面的人後畫
+    viewMonsters
+      .map((m) => ({ ...m, monster: true }))
+      .concat(viewPeople)
+      .sort((a, b) => a.y - b.y) // 下面的後畫
       .forEach((o) => {
+        if (o.monster) return drawMonster(o.row, o.x, o.y, ms);
         const isMe = o.id === meId || (meName && (roster.get(o.id) || {}).name === meName);
         drawPlayer(o.row, o.x, o.y, ms, isMe);
       });
@@ -739,11 +802,10 @@
           ? '<p class="mg-big">' + n + "</p>"
           : '<p class="mg-title">' + esc(giftName) + " 爭奪戰" + (mode === "play" ? "" : "（直播）") + "</p>" +
             '<ul class="mg-rules">' +
-            "<li>WASD／方向鍵移動</li>" +
-            "<li>按住<b>空白鍵</b>蓄力、放開丟石頭：蓄越久丟越遠越快（最多 1 秒），可以邊走邊蓄</li>" +
-            "<li>走過去就撿：石頭（最多 3 顆）、禮物、愛心補血</li>" +
-            "<li>被砸中扣 1 滴血，5 滴血用完就淘汰</li>" +
-            "<li>時間到<b>禮物最多</b>的人贏，同分比血量；只剩一人就直接贏</li>" +
+            "<li>先<b>撿石頭</b>才能攻擊：按住空白鍵蓄力、放開丟（WASD 移動）</li>" +
+            "<li>打<b>黑色怪物</b>會掉禮物，快去撿！</li>" +
+            "<li>閃開怪物噴的火和其他人的石頭</li>" +
+            "<li>時間到<b>禮物最多</b>的人贏</li>" +
             "</ul>" +
             '<p class="mg-tip">' + n + " 秒後開始</p>";
     } else if (mode === "watch" && meId !== null && viewPeople.some((o) => o.id === meId && !o.alive)) {

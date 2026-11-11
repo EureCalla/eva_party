@@ -97,12 +97,11 @@ class GameDB:
         self.round_sec: float = cms.EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
         self.start_tickets: int = cms.START_TICKETS
-        # 小遊戲參數；沙盒可改 game_sec 縮短、game_bots 讓沒操作的參賽者由機器人接手
+        # 小遊戲參數；沙盒可改 game_sec 縮短
         self.game_prep_sec: float = cms.GAME_PREP_SEC
         self.game_sec: float = cms.GAME_SEC
         self.game_reveal_sec: float = cms.GAME_REVEAL_SEC
         self.game_hp: int = cms.GAME_HP
-        self.game_bots: bool = False
         self.battle: StoneBattle | None = None  # 進行中的小遊戲（只在記憶體）
         self.battle_round_id: int | None = None
         self._token_ids: dict[str, int] = {}  # 小遊戲每秒很多次請求，token→player id 快取免得一直查 DB
@@ -667,9 +666,7 @@ class GameDB:
             r["id"]: r for r in self.conn.execute(f"SELECT id, en_name, label FROM players WHERE id IN ({marks})", pool)
         }
         players = [{"id": pid, "name": rows[pid]["en_name"], "label": rows[pid]["label"]} for pid in pool if pid in rows]
-        self.battle = StoneBattle(
-            players, game_epoch, self.game_prep_sec, self.game_sec, self.game_hp, bots=self.game_bots
-        )
+        self.battle = StoneBattle(players, game_epoch, self.game_prep_sec, self.game_sec, self.game_hp)
         self.battle_round_id = round_id
         self._token_ids.clear()
         print(f"[models] minigame started: round {round_id}, {len(players)} players")

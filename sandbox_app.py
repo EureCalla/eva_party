@@ -73,10 +73,6 @@ def main() -> None:
         "--game-sec", type=float, default=cms.GAME_SEC,
         help=f"小遊戲時間秒數，預設 {cms.GAME_SEC}；測試時可縮短，例如 30",
     )
-    parser.add_argument(
-        "--bots", action="store_true",
-        help="小遊戲裡超過 3 秒沒操作的參賽者由機器人接手（一個人也能測試對戰）",
-    )
     args = parser.parse_args()
     info = Introduce()
     print(f"[sandbox] {info.program} {info.version}（沙盒）")
@@ -95,8 +91,7 @@ def main() -> None:
     fill_sample_descriptions(db.conn)  # 沙盒 DB 裡還沒寫描述的禮物補上測試描述
     db.round_sec = args.round_sec
     db.game_sec = args.game_sec
-    db.game_bots = args.bots
-    print(f"[sandbox] 每份禮物倒數 {args.round_sec:g} 秒，小遊戲 {args.game_sec:g} 秒，機器人{'開' if args.bots else '關'}")
+    print(f"[sandbox] 每份禮物倒數 {args.round_sec:g} 秒，小遊戲 {args.game_sec:g} 秒")
     print(f"[sandbox] players in DB: {db.player_count()}, stage: {db.get_stage()}")
     server = SandboxServer(cms.HOST, cms.SANDBOX_PORT, cms.STATIC_DIR, db)
     print(f"[sandbox] 本機：http://localhost:{cms.SANDBOX_PORT}{cms.SANDBOX_PAGE}")
