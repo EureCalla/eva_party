@@ -201,6 +201,7 @@
       if (!q || p[5] >= q[5]) return;
       if (mode === "play" && p[0] === meId) return; // 自己的在收到回應時就處理了
       effects.push({ clock: "frame", t: f.t, x: p[1], y: p[2] - 0.6, text: "-1", color: "#E5484D", spark: true });
+      if (p[6] < q[6]) effects.push({ clock: "frame", t: f.t + 0.15, x: p[1], y: p[2] - 1.1, text: "掉禮物！", color: "#DE6A93" });
     });
     // 黑色怪物被打中：掉一個禮物
     const mons = new Map((prev.m || []).map((m) => [m[0], m]));
@@ -260,6 +261,7 @@
       flashUntil = now + 0.35;
       shakeUntil = now + 0.25;
       effects.push({ clock: "local", t: now, x: me ? me.x : mine[1], y: (me ? me.y : mine[2]) - 0.6, text: "-1", color: "#E5484D", spark: true, follow: true });
+      if (mine[6] < server[6]) effects.push({ clock: "local", t: now + 0.15, x: me ? me.x : mine[1], y: (me ? me.y : mine[2]) - 1.1, text: "掉禮物！", color: "#DE6A93", follow: true });
     }
     server = mine;
     if (!me) {
@@ -308,8 +310,9 @@
     if (!canAct() || !frames.length) return;
     let stones = shownStones();
     let hp = shownHp();
-    frames[frames.length - 1].i.forEach(([id, k, x, y]) => {
+    frames[frames.length - 1].i.forEach(([id, k, x, y, lock, until]) => {
       if (pending.has(id) || Math.hypot(x - me.x, y - me.y) >= PICK_PREDICT) return;
+      if (k === "gift" && lock === meId && playClock() < until) return; // 自己被打掉的，10 秒內撿不回來
       if (k === "stone" && stones >= map.max_stones) return;
       if (k === "heal" && hp >= meta.max_hp) return;
       pending.set(id, { k, at: now });
@@ -705,8 +708,20 @@
     // 地上的東西：參賽者看最新的（不用延遲），先撿起來的不畫
     const itemsFrame = mode === "play" ? frames[frames.length - 1] : v && (v.b || v.a);
     if (itemsFrame) {
-      itemsFrame.i.forEach(([id, k, x, y]) => {
-        if (!pending.has(id)) drawItem(k, x, y, ms);
+      const clock = mode === "play" ? playClock() : t;
+      itemsFrame.i.forEach(([id, k, x, y, lock, until]) => {
+        if (pending.has(id)) return;
+        const mine = k === "gift" && lock !== undefined && lock === meId && clock < until;
+        if (mine) ctx.globalAlpha = 0.4;
+        drawItem(k, x, y, ms);
+        ctx.globalAlpha = 1;
+        if (mine) {
+          ctx.font = "bold 15px " + bridge.font;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "#2A1A10";
+          ctx.fillText(String(Math.ceil(until - clock)), px(x), py(y) + 20);
+        }
       });
     }
     // 別人的石頭：從延遲畫面那格依速度外插；自己的石頭本機畫
@@ -802,9 +817,10 @@
           ? '<p class="mg-big">' + n + "</p>"
           : '<p class="mg-title">' + esc(giftName) + " 爭奪戰" + (mode === "play" ? "" : "（直播）") + "</p>" +
             '<ul class="mg-rules">' +
-            "<li>先<b>撿石頭</b>才能攻擊：按住空白鍵蓄力、放開丟（WASD 移動）</li>" +
+            "<li>用 <b>WASD</b> 或<b>方向鍵</b>移動</li>" +
+            "<li>先<b>撿石頭</b>才能攻擊：按住空白鍵蓄力、放開丟</li>" +
             "<li>打<b>黑色怪物</b>會掉禮物，快去撿！</li>" +
-            "<li>閃開怪物噴的火和其他人的石頭</li>" +
+            "<li>閃開怪物噴的火和其他人的石頭：被打中身上的禮物會掉一個，10 秒內自己撿不回來</li>" +
             "<li>時間到<b>禮物最多</b>的人贏</li>" +
             "</ul>" +
             '<p class="mg-tip">' + n + " 秒後開始</p>";

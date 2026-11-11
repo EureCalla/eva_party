@@ -82,6 +82,7 @@ FIRE_COOLDOWN = 2.0
 FIRE_SPEED = 9.0
 FIRE_RANGE = 7.0
 FIRE_AIM_OFF = 0.6  # 玩家離 8 方向射線多近才噴
+DROP_LOCK_SEC = 10.0  # 被打中掉出來的禮物，原本的主人幾秒內不能撿回去
 
 
 def stone_range(power: float) -> float:
@@ -251,9 +252,16 @@ class StoneBattle:
         self.shots = keep
 
     def _hurt(self, p: dict[str, Any]) -> None:
-        """Take one HP unless the player is still flashing from the last hit; 0 HP is out."""
+        """Take one HP unless the player is still flashing from the last hit; 0 HP is out.
+
+        A player carrying gifts drops one next to them; for DROP_LOCK_SEC only
+        the others can pick it up.
+        """
         if self.t < p["inv_until"]:
             return
+        if p["gifts"] > 0:
+            p["gifts"] -= 1
+            self._drop_gift(p["x"], p["y"], lock=p["id"])
         p["hp"] -= 1
         p["inv_until"] = self.t + INVULN_SEC
         if p["hp"] <= 0:
@@ -277,6 +285,8 @@ class StoneBattle:
                     continue
                 p["stones"] += 1
             elif item["k"] == "gift":
+                if item.get("lock") == p["id"] and self.t < item["until"]:
+                    continue  # 自己被打掉的禮物，10 秒內撿不回來
                 p["gifts"] += 1
             else:
                 if p["hp"] >= self.max_hp:
@@ -376,13 +386,20 @@ class StoneBattle:
         })
         self._next_id += 1
 
+    def _drop_gift(self, x: float, y: float, lock: int | None = None) -> None:
+        """Drop a gift on a free spot near (x, y); ``lock`` is a player who cannot take it for DROP_LOCK_SEC."""
+        spot = self._free_spot((x, y), 0.2, 0.0) or (x, y)
+        item = {"id": self._next_id, "k": "gift", "x": round(spot[0], 2), "y": round(spot[1], 2)}
+        if lock is not None:
+            item["lock"], item["until"] = lock, round(self.t + DROP_LOCK_SEC, 3)
+        self.items.append(item)
+        self._next_id += 1
+
     def _hit_monster(self, m: dict[str, Any]) -> None:
         """A stone hit: drop one gift next to the monster; it vanishes after MONSTER_HP hits."""
         m["hp"] -= 1
         m["hurt_until"] = self.t + 0.3
-        spot = self._free_spot((m["x"], m["y"]), 0.2, 0.0) or (m["x"], m["y"])
-        self.items.append({"id": self._next_id, "k": "gift", "x": round(spot[0], 2), "y": round(spot[1], 2)})
-        self._next_id += 1
+        self._drop_gift(m["x"], m["y"])
         if m["hp"] <= 0:
             self.monsters.remove(m)
             self.next_monster = max(self.next_monster, self.t + MONSTER_RESPAWN_SEC)
@@ -512,7 +529,8 @@ class StoneBattle:
                 [s["id"], round(s["x"], 2), round(s["y"], 2), round(s["vx"], 2), round(s["vy"], 2), s["owner"], s["kind"][0]]
                 for s in self.shots
             ],
-            "i": [[i["id"], i["k"], i["x"], i["y"]] for i in self.items],
+            # 被打掉的禮物多帶「原主人、到期時間」：[id, k, x, y, lock, until]
+            "i": [[i["id"], i["k"], i["x"], i["y"]] + ([i["lock"], i["until"]] if "lock" in i else []) for i in self.items],
             "m": [
                 [m["id"], round(m["x"], 2), round(m["y"], 2), m["hp"], m["ammo"], int(self.t < m["hurt_until"]), m["fx"], m["fy"]]
                 for m in self.monsters
