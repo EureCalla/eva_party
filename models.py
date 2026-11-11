@@ -1,19 +1,25 @@
 """SQLite storage for players, sessions and gift claims."""
 
+import json
 import random
 import secrets
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import mpivr20_cms as cms
+from minigame import StoneBattle
 from migrations import (
     m001_add_gift_label,
     m002_add_permission,
     m003_add_settings,
     m004_add_draw_order,
     m005_add_gift_description,
+    m006_add_exchange,
+    m007_add_minigame,
 )
 
 PERMISSIONS = ("user", "admin")
@@ -54,6 +60,11 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def epoch_to_utc(epoch: float) -> str:
+    """Convert epoch seconds to a UTC 'YYYY-MM-DD HH:MM:SS' string."""
+    return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def draw_seed_now() -> str:
     """Return the current local time as 'yyyymmddhhmm', the seed for shuffling the draw order."""
     return datetime.now().strftime("%Y%m%d%H%M")
@@ -80,6 +91,21 @@ class GameDB:
             m003_add_settings.apply(self.conn)
             m004_add_draw_order.apply(self.conn)
             m005_add_gift_description.apply(self.conn)
+            m006_add_exchange.apply(self.conn)
+            m007_add_minigame.apply(self.conn)
+        # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
+        self.round_sec: float = cms.EXCHANGE_ROUND_SEC
+        self.max_challengers: int = cms.MAX_CHALLENGERS
+        self.start_tickets: int = cms.START_TICKETS
+        # 小遊戲參數；沙盒可改 game_sec 縮短、game_bots 讓沒操作的參賽者由機器人接手
+        self.game_prep_sec: float = cms.GAME_PREP_SEC
+        self.game_sec: float = cms.GAME_SEC
+        self.game_reveal_sec: float = cms.GAME_REVEAL_SEC
+        self.game_hp: int = cms.GAME_HP
+        self.game_bots: bool = False
+        self.battle: StoneBattle | None = None  # 進行中的小遊戲（只在記憶體）
+        self.battle_round_id: int | None = None
+        self._token_ids: dict[str, int] = {}  # 小遊戲每秒很多次請求，token→player id 快取免得一直查 DB
         print(f"[models] DB ready: {db_path}")
 
     def player_count(self) -> int:
@@ -367,6 +393,7 @@ class GameDB:
             self.conn.commit()
             if stage == EXCHANGE_STAGE and before != EXCHANGE_STAGE:
                 self._shuffle_draw_order(None, player["id"])
+                self._reset_exchange()  # 重新進入交換禮物＝整局重來
         print(f"[models] stage -> {stage} by {player['en_name']}")
         return "ok", {}
 
@@ -519,3 +546,401 @@ class GameDB:
             self.conn.commit()
         print(f"[models] guess correct: {player['en_name']} is {gift['animal']}")
         return "correct"
+
+    # ---------- 交換禮物遊戲：回合、候選人、爭奪 ----------
+    # 聚光燈每到一份禮物開一個回合，倒數 round_sec 秒；回合結束才決定得主（小遊戲完成前先用暫代規則）。
+    # 回合推進不靠背景執行緒：每次有人讀狀態或動作時先 _tick()，過期的回合一次結算並開下一回合。
+
+    def clock(self) -> float:
+        """Return the current epoch seconds; tests replace this to fake time."""
+        return time.time()
+
+    def _reset_exchange(self) -> None:
+        """Clear rounds, challengers and winners, and refill everyone's tickets; caller holds the lock."""
+        now = utc_now()
+        self.conn.execute("UPDATE exchange_challengers SET is_deleted = 1, deleted_at = ? WHERE is_deleted = 0", (now,))
+        self.conn.execute("UPDATE exchange_rounds SET is_deleted = 1, deleted_at = ? WHERE is_deleted = 0", (now,))
+        self.conn.execute("UPDATE players SET winner_id = NULL, won_at = NULL, tickets = ?", (self.start_tickets,))
+        self.conn.commit()
+        self.battle, self.battle_round_id = None, None
+        print("[models] exchange reset")
+
+    def _current_round(self) -> sqlite3.Row | None:
+        """Return the latest round of the current exchange, open or closed."""
+        return self.conn.execute(
+            "SELECT * FROM exchange_rounds WHERE is_deleted = 0 ORDER BY round_no DESC LIMIT 1"
+        ).fetchone()
+
+    def _next_gift(self) -> int | None:
+        """Return the next gift in draw order that has not had a round yet, or None when all are done."""
+        row = self.conn.execute(
+            "SELECT id FROM players WHERE is_deleted = 0 "
+            "AND id NOT IN (SELECT gift_id FROM exchange_rounds WHERE is_deleted = 0) "
+            "ORDER BY draw_order IS NULL, draw_order, gift_order LIMIT 1"
+        ).fetchone()
+        return row["id"] if row else None
+
+    def _has_won(self, player_id: int) -> bool:
+        """Return True when the player already got a gift in this exchange."""
+        row = self.conn.execute(
+            "SELECT 1 FROM players WHERE winner_id = ? AND is_deleted = 0 LIMIT 1", (player_id,)
+        ).fetchone()
+        return row is not None
+
+    def _eligible_ids(self, gift_id: int) -> list[int]:
+        """Return players who may hold this gift: active, not its owner (claimer), and without a gift yet."""
+        rows = self.conn.execute(
+            "SELECT p.id FROM players p WHERE p.is_deleted = 0 "
+            "AND p.id IS NOT (SELECT claimed_by FROM players WHERE id = ?) "
+            "AND NOT EXISTS (SELECT 1 FROM players g WHERE g.winner_id = p.id AND g.is_deleted = 0) "
+            "ORDER BY p.id",
+            (gift_id,),
+        ).fetchall()
+        return [r["id"] for r in rows]
+
+    def _open_round(self, gift_id: int, start_epoch: float, round_no: int) -> None:
+        """Open a round for ``gift_id`` and draw its candidate at random; caller holds the lock."""
+        eligible = self._eligible_ids(gift_id)
+        candidate = secrets.SystemRandom().choice(eligible) if eligible else None
+        ends_epoch = start_epoch + self.round_sec
+        self.conn.execute(
+            "INSERT INTO exchange_rounds (round_no, gift_id, candidate_id, started_at, ends_at, ends_epoch, "
+            "status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'open', ?)",
+            (round_no, gift_id, candidate, epoch_to_utc(start_epoch), epoch_to_utc(ends_epoch), ends_epoch, utc_now()),
+        )
+        self.conn.commit()
+        print(f"[models] exchange round {round_no} opened ({len(eligible)} eligible)")
+
+    def _active_challengers(self, round_id: int) -> list[int]:
+        """Return the player ids still in the contest for a round, in join order."""
+        rows = self.conn.execute(
+            "SELECT player_id FROM exchange_challengers WHERE round_id = ? AND is_deleted = 0 ORDER BY id",
+            (round_id,),
+        ).fetchall()
+        return [r["player_id"] for r in rows]
+
+    def _pool(self, rnd: sqlite3.Row) -> list[int]:
+        """Return the round's contestants: the candidate (if any) followed by the challengers in join order."""
+        head = [rnd["candidate_id"]] if rnd["candidate_id"] is not None else []
+        return head + self._active_challengers(rnd["id"])
+
+    def _close_round(
+        self, rnd: sqlite3.Row, winner: int | None, how: str, at_epoch: float, result: str | None = None
+    ) -> None:
+        """Record the round's winner on the gift and close the round; caller holds the lock."""
+        if winner is not None:
+            self.conn.execute(
+                "UPDATE players SET winner_id = ?, won_at = ? WHERE id = ?", (winner, epoch_to_utc(at_epoch), rnd["gift_id"])
+            )
+        self.conn.execute(
+            "UPDATE exchange_rounds SET status = 'closed', winner_id = ?, resolved_by = ?, game_result = ? WHERE id = ?",
+            (winner, how, result, rnd["id"]),
+        )
+        self.conn.commit()
+        print(f"[models] exchange round {rnd['round_no']} closed: {how}")
+
+    def _end_contest(self, rnd: sqlite3.Row) -> float | None:
+        """Handle a round whose countdown ran out; returns when the next round starts, or None while a game runs.
+
+        兩人以上（候選人＋挑戰者）→ 進小遊戲；只有一人 → 直接給他；沒人 → 沒有得主。
+        Challengers' tickets were taken when they joined and are not refunded.
+        """
+        pool = self._pool(rnd)
+        if len(pool) >= 2:
+            self.conn.execute(
+                "UPDATE exchange_rounds SET status = 'game', game_epoch = ? WHERE id = ?", (rnd["ends_epoch"], rnd["id"])
+            )
+            self.conn.commit()
+            self._start_battle(rnd["id"], pool, rnd["ends_epoch"])
+            return None
+        if pool:
+            how = "candidate" if pool[0] == rnd["candidate_id"] else "random"
+            self._close_round(rnd, pool[0], how, rnd["ends_epoch"])
+        else:
+            self._close_round(rnd, None, "nobody", rnd["ends_epoch"])
+        return rnd["ends_epoch"]
+
+    def _start_battle(self, round_id: int, pool: list[int], game_epoch: float) -> None:
+        """Create the in-memory minigame for a round; caller holds the lock."""
+        marks = ",".join("?" * len(pool))
+        rows = {
+            r["id"]: r for r in self.conn.execute(f"SELECT id, en_name, label FROM players WHERE id IN ({marks})", pool)
+        }
+        players = [{"id": pid, "name": rows[pid]["en_name"], "label": rows[pid]["label"]} for pid in pool if pid in rows]
+        self.battle = StoneBattle(
+            players, game_epoch, self.game_prep_sec, self.game_sec, self.game_hp, bots=self.game_bots
+        )
+        self.battle_round_id = round_id
+        self._token_ids.clear()
+        print(f"[models] minigame started: round {round_id}, {len(players)} players")
+
+    def _battle_for(self, rnd: sqlite3.Row) -> StoneBattle | None:
+        """Return the in-memory minigame of a 'game' round, or None when it was lost (server restarted)."""
+        return self.battle if self.battle is not None and self.battle_round_id == rnd["id"] else None
+
+    def _settle_game(self, rnd: sqlite3.Row, now: float) -> float | None:
+        """Close a 'game' round once its result has been shown; returns when the next round starts, or None.
+
+        若伺服器在遊戲中重開（記憶體裡的對戰不見了），立刻改用隨機規則結算，流程不會卡住。
+        """
+        battle = self._battle_for(rnd)
+        if battle is None:
+            pool = self._pool(rnd)
+            winner = secrets.SystemRandom().choice(pool) if pool else None
+            print(f"[models] minigame of round {rnd['round_no']} lost (restart?), settled at random")
+            self._close_round(rnd, winner, "random" if winner else "nobody", now)
+            return now
+        battle.advance(now)
+        if battle.finished_at is None:
+            return None
+        reveal_end = battle.finished_at + self.game_reveal_sec
+        if now < reveal_end:
+            return None
+        result = json.dumps(battle.ranking, ensure_ascii=False)
+        self._close_round(rnd, battle.winner, "game", battle.finished_at, result)
+        self.battle, self.battle_round_id = None, None
+        return reveal_end
+
+    def _tick(self) -> None:
+        """Settle every expired round and open the next ones on schedule; caller holds the lock.
+
+        The next round starts when the previous one ended (or its minigame's
+        result finished showing), not when someone noticed, so a quiet server
+        catches up correctly. Bounded for safety.
+        """
+        now = self.clock()
+        for _ in range(1000):
+            rnd = self._current_round()
+            if rnd is None:
+                return
+            if rnd["status"] == "open":
+                if now < rnd["ends_epoch"]:
+                    return
+                next_start = self._end_contest(rnd)
+                if next_start is None:
+                    continue  # 小遊戲剛建立，下一圈看它是否已經結束（伺服器很久沒人連線時）
+            elif rnd["status"] == "game":
+                next_start = self._settle_game(rnd, now)
+                if next_start is None:
+                    return
+            else:
+                return
+            nxt = self._next_gift()
+            if nxt is None:
+                print("[models] exchange finished")
+                return
+            self._open_round(nxt, next_start, rnd["round_no"] + 1)
+
+    def start_exchange(self, token: str) -> str:
+        """Start the first round (admins only); returns ok / forbidden / locked / started / empty."""
+        with self.lock:
+            player = self.player_by_token(token) if token else None
+            if player is None or player["permission"] != "admin":
+                return "forbidden"
+            if self.get_stage() != EXCHANGE_STAGE:
+                return "locked"
+            if self._current_round() is not None:
+                return "started"
+            gift_id = self._next_gift()
+            if gift_id is None:
+                return "empty"
+            self._open_round(gift_id, self.clock(), 1)
+        print(f"[models] exchange started by {player['en_name']}")
+        return "ok"
+
+    def _join_block(self, player: sqlite3.Row, rnd: sqlite3.Row) -> str | None:
+        """Return why the player cannot join this round's contest, or None when they can."""
+        owner = self.conn.execute("SELECT claimed_by FROM players WHERE id = ?", (rnd["gift_id"],)).fetchone()
+        challengers = self._active_challengers(rnd["id"])
+        if owner is not None and owner["claimed_by"] == player["id"]:
+            return "owner"
+        if rnd["candidate_id"] == player["id"]:
+            return "candidate"
+        if self._has_won(player["id"]):
+            return "already_won"
+        if player["id"] in challengers:
+            return "joined"
+        if player["tickets"] <= 0:
+            return "no_ticket"
+        if len(challengers) >= self.max_challengers:
+            return "full"
+        return None
+
+    def _open_round_for(self, token: str) -> tuple[sqlite3.Row | None, sqlite3.Row | None, str | None]:
+        """Common checks for contest actions: (player, open round, error); caller holds the lock."""
+        player = self.player_by_token(token) if token else None
+        if player is None:
+            return None, None, "unknown"
+        if self.get_stage() != EXCHANGE_STAGE:
+            return player, None, "locked"
+        self._tick()
+        rnd = self._current_round()
+        if rnd is None or rnd["status"] != "open":
+            return player, None, "no_round"
+        return player, rnd, None
+
+    def join_contest(self, token: str) -> str:
+        """Join the contest for the gift under the spotlight, spending one ticket.
+
+        Returns ok / unknown / locked / no_round / owner / candidate / already_won / joined / no_ticket / full.
+        """
+        with self.lock:
+            player, rnd, err = self._open_round_for(token)
+            if err:
+                return err
+            block = self._join_block(player, rnd)
+            if block:
+                return block
+            self.conn.execute(
+                "INSERT INTO exchange_challengers (round_id, player_id, joined_at) VALUES (?, ?, ?)",
+                (rnd["id"], player["id"], utc_now()),
+            )
+            self.conn.execute("UPDATE players SET tickets = tickets - 1 WHERE id = ?", (player["id"],))
+            self.conn.commit()
+        print(f"[models] contest joined: {player['en_name']} (round {rnd['round_no']})")
+        return "ok"
+
+    def withdraw_contest(self, token: str) -> str:
+        """Leave the contest before the countdown ends and get the ticket back.
+
+        Returns ok / unknown / locked / no_round / not_joined.
+        """
+        with self.lock:
+            player, rnd, err = self._open_round_for(token)
+            if err:
+                return err
+            cur = self.conn.execute(
+                "UPDATE exchange_challengers SET is_deleted = 1, deleted_at = ? "
+                "WHERE round_id = ? AND player_id = ? AND is_deleted = 0",
+                (utc_now(), rnd["id"], player["id"]),
+            )
+            if cur.rowcount == 0:
+                return "not_joined"
+            self.conn.execute("UPDATE players SET tickets = tickets + 1 WHERE id = ?", (player["id"],))
+            self.conn.commit()
+        print(f"[models] contest withdrawn: {player['en_name']} (round {rnd['round_no']})")
+        return "ok"
+
+    def exchange_state(self, token: str | None) -> dict[str, Any]:
+        """Return the exchange game for the spotlight page.
+
+        Public: the current round (gift, countdown, candidate's name, the
+        challengers in join order, and the minigame's timing once it starts)
+        and every settled gift with its winner. The future draw order is not
+        included. ``round.phase`` is contest / prep / play / reveal.
+        """
+        with self.lock:
+            if self.get_stage() == EXCHANGE_STAGE:
+                self._tick()
+            now = self.clock()
+            names = {r["id"]: r["en_name"] for r in self.conn.execute("SELECT id, en_name FROM players")}
+            rnd = self._current_round()
+            is_open = rnd is not None and rnd["status"] == "open"
+            in_game = rnd is not None and rnd["status"] == "game"
+            challengers = self._active_challengers(rnd["id"]) if is_open or in_game else []
+            pool = self._pool(rnd) if in_game else []
+            round_info = None
+            if is_open or in_game:
+                round_info = {
+                    "round_no": rnd["round_no"],
+                    "gift_id": rnd["gift_id"],
+                    "ends_epoch": rnd["ends_epoch"],
+                    "candidate": names.get(rnd["candidate_id"]),
+                    "challengers": len(challengers),
+                    "challenger_names": [names.get(pid) for pid in challengers],  # 依加入順序
+                    "max_challengers": self.max_challengers,
+                    "phase": "contest",
+                }
+                battle = self._battle_for(rnd) if in_game else None
+                if battle is not None:
+                    phase = battle.phase(now)
+                    round_info.update({
+                        "phase": "reveal" if phase == "over" else phase,
+                        "participants": [names.get(pid) for pid in pool],
+                        "play_start": battle.play_start,
+                        "play_end": battle.play_end,
+                        "finished_at": battle.finished_at,
+                        "reveal_end": None if battle.finished_at is None else battle.finished_at + self.game_reveal_sec,
+                        "ranking": battle.ranking,
+                    })
+            results = [
+                {
+                    "round_no": r["round_no"],
+                    "gift_id": r["gift_id"],
+                    "animal": r["animal"],
+                    "label": r["label"],
+                    "winner": names.get(r["winner_id"]),
+                    "resolved_by": r["resolved_by"],
+                    "ranking": json.loads(r["game_result"]) if r["game_result"] else None,
+                }
+                for r in self.conn.execute(
+                    "SELECT r.round_no, r.gift_id, r.winner_id, r.resolved_by, r.game_result, g.animal, g.label "
+                    "FROM exchange_rounds r JOIN players g ON g.id = r.gift_id "
+                    "WHERE r.is_deleted = 0 AND r.status = 'closed' ORDER BY r.round_no"
+                )
+            ]
+            me: dict[str, Any] | None = None
+            player = self.player_by_token(token) if token else None
+            if player is not None:
+                won = self.conn.execute(
+                    "SELECT animal, label FROM players WHERE winner_id = ? AND is_deleted = 0", (player["id"],)
+                ).fetchone()
+                block = self._join_block(player, rnd) if is_open else "no_round"
+                me = {
+                    "name": player["en_name"],
+                    "tickets": player["tickets"],
+                    "max_tickets": self.start_tickets,
+                    "joined": player["id"] in challengers,
+                    "is_candidate": (is_open or in_game) and rnd["candidate_id"] == player["id"],
+                    "in_game": player["id"] in pool,
+                    "won": {"animal": won["animal"], "label": won["label"]} if won else None,
+                    "can_join": block is None,
+                    "reason": block,
+                    "is_admin": player["permission"] == "admin",
+                }
+            return {
+                "now": now,
+                "round_sec": self.round_sec,
+                "started": rnd is not None,
+                "finished": rnd is not None and rnd["status"] == "closed",
+                "round": round_info,
+                "results": results,
+                "me": me,
+            }
+
+    # ---------- 小遊戲：玩家操作（即時）與觀眾直播（延遲） ----------
+    # 這兩個入口每秒會被打很多次，只碰記憶體裡的對戰，不讀寫 DB（token 有快取）。
+
+    def _player_id(self, token: str) -> int | None:
+        """Return the player id for a token, cached for the minigame's frequent calls."""
+        pid = self._token_ids.get(token)
+        if pid is None and token:
+            with self.lock:
+                row = self.player_by_token(token)
+            if row is not None:
+                pid = self._token_ids[token] = row["id"]
+        return pid
+
+    def minigame_input(
+        self, token: str, x: float, y: float, fx: int, fy: int, throw: bool,
+        seq: int | None = None, power: float = 0.5,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Report a player's move/throw; returns (ok, live snapshot) / (unknown|no_game|not_player, None)."""
+        pid = self._player_id(token)
+        if pid is None:
+            return "unknown", None
+        battle = self.battle
+        if battle is None:
+            return "no_game", None
+        snap = battle.report(pid, x, y, fx, fy, throw, self.clock(), seq, power)
+        if snap is None:
+            return "not_player", None
+        snap["me"] = pid
+        return "ok", snap
+
+    def minigame_watch(self, since: float) -> tuple[str, dict[str, Any] | None]:
+        """Return buffered live frames newer than ``since`` for spectators; (no_game, None) when no game runs."""
+        battle = self.battle
+        if battle is None:
+            return "no_game", None
+        return "ok", battle.watch(self.clock(), since)

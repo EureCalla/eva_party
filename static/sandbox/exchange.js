@@ -2,7 +2,7 @@
   "use strict";
 
   // 沙盒・交換禮物遊戲。繪圖零件與色票暫時從 ../game.js 複製（game.js 不動），合併回正式版時再整併
-  const POLL_MS = 3000;
+  const EXCHANGE_POLL_MS = 2000; // 交換回合要看倒數與爭奪人數，輪詢比禮物牆快
 
   // ---------- 正方形禮物與小腳（同 game.js） ----------
   const EXTRA = {
@@ -338,6 +338,12 @@
   }
 
   function spotFrame(ms) {
+    if (inGamePhase()) {
+      // 小遊戲蓋住舞台時不重畫聚光燈，省下效能給小遊戲
+      syncBubble(false);
+      requestAnimationFrame(spotFrame);
+      return;
+    }
     let view = cur;
     if (turnStart !== null) {
       const p = Math.min(1, (ms - turnStart) / 1000 / TURN_SEC);
@@ -360,16 +366,18 @@
       const bob = Math.abs(pos) < 0.05 ? Math.abs(Math.sin((ms / 1000) * 2.4)) * 0.6 : 0;
       drawSpotGift(g, sl.x, sl.y, sl.s, sl.a, bob);
     });
-    syncBubble(turnStart === null);
+    // 管理者按開始後才顯示講話框；小遊戲進行中收起
+    syncBubble(turnStart === null && !!game && game.started && !inGamePhase());
     requestAnimationFrame(spotFrame);
   }
 
   function updateCount() {
-    countEl.textContent = order.length ? "第 " + (cur + 1) + " / " + order.length + " 個" : "還沒有禮物";
-    document.getElementById("ex-next").disabled = cur >= order.length - 1;
+    if (!game || !game.started) countEl.textContent = order.length ? "共 " + order.length + " 份禮物" : "還沒有禮物";
+    else if (game.finished) countEl.textContent = "全部 " + order.length + " 份禮物都交換完了";
+    else countEl.textContent = "第 " + game.round.round_no + " / " + order.length + " 份";
   }
 
-  // 輪轉到第 to 個；動畫中再按會從目前畫面位置接著轉
+  // 輪轉到第 to 個（由伺服器回合決定）；動畫中再換會從目前畫面位置接著轉
   function turnTo(to) {
     if (to < 0 || to >= order.length || to === cur) return;
     const now = performance.now();
@@ -384,18 +392,6 @@
     updateCount();
     console.log("[exchange] spotlight ->", cur + 1, order[cur].animal);
   }
-
-  document.getElementById("ex-next").addEventListener("click", () => turnTo(cur + 1));
-  document.getElementById("ex-reset").addEventListener("click", () => turnTo(0));
-  document.addEventListener("keydown", (e) => {
-    if (exEl.hidden) return;
-    if (e.key === "ArrowRight" || e.key === " ") {
-      e.preventDefault();
-      turnTo(cur + 1);
-    } else if (e.key === "ArrowLeft") {
-      turnTo(cur - 1);
-    }
-  });
 
   // ---------- 頁首 ----------
   function drawSign() {
@@ -433,10 +429,169 @@
     const at = (g) => (rank.has(g.gift_id) ? rank.get(g.gift_id) : drawIds.length + g.gift_id);
     order = data.gifts.slice().sort((a, b) => at(a) - at(b));
     cur = Math.min(cur, Math.max(0, order.length - 1));
-    updateCount();
     if (data.description_max) descMax = data.description_max;
     showMyDesc(me);
+    applyGame();
   }
+
+  // ---------- 交換回合：倒數、候選人、爭奪（伺服器為準） ----------
+  const timerEl = document.getElementById("ex-timer");
+  const waitEl = document.getElementById("ex-wait");
+  const bannerEl = document.getElementById("ex-banner");
+  const startBtn = document.getElementById("ex-start");
+  const joinBtn = document.getElementById("ex-join");
+  const leaveBtn = document.getElementById("ex-leave");
+  const JOIN_REASONS = {
+    owner: "這是你帶來的禮物，不能爭奪",
+    candidate: "你是這份禮物的候選人，等倒數結束就好",
+    already_won: "你已經獲得禮物了，不能再爭奪",
+    no_ticket: "搶奪券用完了",
+    full: "爭奪名額已滿",
+    no_round: "目前沒有進行中的禮物",
+    locked: "現在不是交換禮物階段",
+  };
+  let game = null; // /api/exchange 的最新結果
+  let clockOffset = 0; // 伺服器時間 - 本機時間（秒）
+  let shownResults = null; // 已經跳過結果橫幅的回合數
+  let bannerTimer = null;
+
+  function serverNow() {
+    return Date.now() / 1000 + clockOffset;
+  }
+
+  // 回合進到小遊戲（準備／遊戲中／公布）時，舞台交給 minigame.js
+  function inGamePhase() {
+    return !!(game && game.round && game.round.phase && game.round.phase !== "contest");
+  }
+
+  async function loadGame() {
+    const r = await api("/api/exchange");
+    if (!r.ok) return;
+    game = r.data;
+    clockOffset = game.now - Date.now() / 1000;
+  }
+
+  // 每幀更新倒數文字；最後 10 秒變色
+  function updateTimer() {
+    const rnd = game && game.round;
+    timerEl.hidden = !rnd || inGamePhase();
+    if (timerEl.hidden) return;
+    const left = Math.max(0, Math.ceil(rnd.ends_epoch - serverNow()));
+    timerEl.textContent = String(Math.floor(left / 60)).padStart(2, "0") + ":" + String(left % 60).padStart(2, "0");
+    timerEl.classList.toggle("urgent", left <= 10);
+  }
+
+  function showBanner(text) {
+    bannerEl.textContent = text;
+    bannerEl.hidden = false;
+    bannerEl.classList.remove("pop");
+    void bannerEl.offsetWidth;
+    bannerEl.classList.add("pop");
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => (bannerEl.hidden = true), 4500);
+  }
+
+  function renderResults() {
+    const list = document.getElementById("ex-results");
+    list.textContent = "";
+    game.results.forEach((r) => {
+      const li = document.createElement("li");
+      const gift = document.createElement("span");
+      gift.className = "res-gift";
+      gift.textContent = r.animal + "的禮物" + (r.label ? "（" + r.label + "）" : "");
+      const who = document.createElement("strong");
+      who.textContent = r.winner || "沒有人";
+      li.append(gift, document.createTextNode(" → "), who);
+      if (r.ranking) {
+        // 小遊戲決定的：可展開看排名
+        const det = document.createElement("details");
+        const sum = document.createElement("summary");
+        sum.textContent = "小遊戲排名";
+        const ol = document.createElement("ol");
+        r.ranking.forEach((p) => {
+          const it = document.createElement("li");
+          it.textContent = p.name + "　禮物 " + p.gifts + "　" + (p.alive ? "血 " + p.hp : "淘汰");
+          ol.appendChild(it);
+        });
+        det.append(sum, ol);
+        li.appendChild(det);
+      }
+      list.appendChild(li);
+    });
+    document.getElementById("ex-results-empty").hidden = game.results.length > 0;
+  }
+
+  function renderContest() {
+    const me = game.me;
+    const rnd = game.round;
+    document.getElementById("ex-contest").hidden = !rnd || inGamePhase();
+    if (rnd) {
+      document.getElementById("ex-cand").textContent = rnd.candidate || "（沒有可抽的人）";
+      document.getElementById("ex-chal").textContent = rnd.challengers + " / " + rnd.max_challengers;
+      // 一起爭奪的人：依加入順序，自己那一格標粉紅
+      const list = document.getElementById("ex-chal-list");
+      list.textContent = "";
+      (rnd.challenger_names || []).forEach((n) => {
+        const li = document.createElement("li");
+        li.textContent = n;
+        if (me && n === me.name) li.classList.add("me");
+        list.appendChild(li);
+      });
+      if (!list.children.length) {
+        const li = document.createElement("li");
+        li.className = "empty";
+        li.textContent = "還沒有人加入";
+        list.appendChild(li);
+      }
+    }
+    if (!me) return;
+    document.getElementById("ex-tickets").textContent = me.tickets + " / " + me.max_tickets;
+    document.getElementById("ex-won").textContent = me.won
+      ? "你獲得了：" + me.won.animal + "的禮物" + (me.won.label ? "（" + me.won.label + "）" : "")
+      : "";
+    joinBtn.hidden = me.joined;
+    leaveBtn.hidden = !me.joined;
+    joinBtn.disabled = !me.can_join;
+    const reason = document.getElementById("ex-reason");
+    reason.textContent = me.joined ? "你已加入爭奪，倒數結束前可以退出（會退還搶奪券）" : JOIN_REASONS[me.reason] || "";
+    startBtn.hidden = !(me.is_admin && !game.started);
+  }
+
+  function applyGame() {
+    if (!game) return;
+    // 聚光燈對準伺服器目前的回合；開始前停在第一份，結束後停在最後一份
+    let target = 0;
+    if (game.round) target = order.findIndex((g) => g.gift_id === game.round.gift_id);
+    else if (game.finished && game.results.length) {
+      const last = game.results[game.results.length - 1].gift_id;
+      target = order.findIndex((g) => g.gift_id === last);
+    }
+    if (target >= 0 && target !== cur) turnTo(target);
+    waitEl.hidden = game.started;
+    waitEl.textContent = "等待管理者開始";
+    document.getElementById("ex-finished").hidden = !game.finished;
+    if (shownResults !== null && game.results.length > shownResults) {
+      const r = game.results[game.results.length - 1];
+      if (r.resolved_by !== "game") showBanner(r.animal + "的禮物 → " + (r.winner || "沒有人")); // 小遊戲已經公布過
+    }
+    shownResults = game.results.length;
+    updateCount();
+    renderContest();
+    renderResults();
+    const gift = game.round ? order.find((g) => g.gift_id === game.round.gift_id) : null;
+    window.ExMinigame.sync(MG_BRIDGE, game, gift);
+  }
+  const MG_BRIDGE = { api: (path, body) => api(path, body), serverNow: () => serverNow(), tagColor: (l) => tagColor(l), font: FONT };
+
+  async function contestAction(path) {
+    const r = await api(path, {});
+    if (!r.ok) document.getElementById("ex-reason").textContent = JOIN_REASONS[r.data.result] || "操作失敗";
+    await loadGame();
+    applyGame();
+  }
+  joinBtn.addEventListener("click", () => contestAction("/api/exchange/join"));
+  leaveBtn.addEventListener("click", () => contestAction("/api/exchange/withdraw"));
+  startBtn.addEventListener("click", () => contestAction("/api/exchange/start"));
 
   // ---------- 舞台下方：禮物主人修改自己的描述 ----------
   const descForm = document.getElementById("ex-desc");
@@ -494,18 +649,22 @@
       cur = 0;
       turnStart = null;
       bubbleKey = null; // 講話框重新彈出
+      shownResults = null; // 新的一局，不補跳舊結果
       console.log("[exchange] draw order loaded, seed", r.data.seed);
     }
   }
   async function refresh(data) {
     await loadDrawOrder();
+    await loadGame();
+    if (shownResults === null && game) {
+      // 第一次載入：聚光燈直接放到目前回合，不從第一份轉過去
+      shownResults = game.results.length;
+      const id = game.round ? game.round.gift_id : null;
+      const rank = drawIds.indexOf(id);
+      if (rank >= 0) cur = rank;
+    }
     applyState(data);
   }
-
-  // 開發用：?turn=n 進場後自動輪轉 n 次（間隔 ?gap 毫秒，預設 1500），方便截圖驗收
-  const QS = new URLSearchParams(location.search);
-  const AUTO_TURN = Number(QS.get("turn")) || 0;
-  const AUTO_GAP = Number(QS.get("gap")) || 1500;
 
   async function enterExchange(data) {
     loginEl.hidden = true;
@@ -517,7 +676,7 @@
     await refresh(data);
     requestAnimationFrame(spotFrame);
     console.log("[exchange] entered as", data.me && data.me.name, "stage", data.stage);
-    for (let i = 0; i < AUTO_TURN; i++) setTimeout(() => turnTo(cur + 1), AUTO_GAP * (i + 1));
+    setInterval(updateTimer, 250);
     setInterval(async () => {
       const r = await api("/api/state");
       if (!r.ok) return;
@@ -528,7 +687,7 @@
         return;
       }
       await refresh(r.data);
-    }, POLL_MS);
+    }, EXCHANGE_POLL_MS);
   }
 
   // 從首頁帶過來（sandbox_bridge.js）：接手登入 token，讀完即刪，重新整理一樣要重新登入

@@ -24,6 +24,17 @@ STAGES: list[tuple[str, str]] = [
 ]
 STAGE_KEYS: list[str] = [k for k, _ in STAGES]
 
+# 交換禮物遊戲：聚光燈每份禮物倒數秒數、每份禮物最多幾位挑戰者（不含候選人）、每人初始搶奪券
+EXCHANGE_ROUND_SEC: int = 180
+MAX_CHALLENGERS: int = 5
+START_TICKETS: int = 5
+
+# 小遊戲（丟石頭搶禮物）：倒數結束且有人爭奪時，候選人＋挑戰者進場 PK
+GAME_PREP_SEC: int = 15  # 進場準備：看玩法說明＋3-2-1
+GAME_SEC: int = 60  # 遊戲時間
+GAME_REVEAL_SEC: int = 5  # 公布結果，之後聚光燈才換下一份
+GAME_HP: int = 5  # 每人血量
+
 # 沙盒：設計新階段畫面用，與正式 server／正式 DB 完全分開，驗收後才合併
 # sandbox.db 由 tools/build_sandbox_db.py 從正式 DB 唯讀複製產生，不進版控（.gitignore 的 *.db）
 SANDBOX_DIR: Path = ROOT_DIR / "sandbox"
