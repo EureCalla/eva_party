@@ -444,7 +444,6 @@
   const JOIN_REASONS = {
     owner: "這是你帶來的禮物，不能爭奪",
     candidate: "你是這份禮物的候選人，等倒數結束就好",
-    already_won: "你已經獲得禮物了，不能再爭奪",
     no_ticket: "搶奪券用完了",
     full: "爭奪名額已滿",
     no_round: "目前沒有進行中的禮物",
@@ -491,37 +490,74 @@
     bannerTimer = setTimeout(() => (bannerEl.hidden = true), 4500);
   }
 
+  // 結果區每次輪詢都會重畫，記住哪些項目展開著，重畫後維持原狀
+  const openDetails = new Set();
+  function keepOpen(det, key) {
+    det.open = openDetails.has(key);
+    det.addEventListener("toggle", () => (det.open ? openDetails.add(key) : openDetails.delete(key)));
+  }
+
+  // 小遊戲排名（可展開）
+  function rankingDetails(gameKind, gameName, ranking, key) {
+    const det = document.createElement("details");
+    keepOpen(det, key);
+    const sum = document.createElement("summary");
+    sum.textContent = (gameName || "小遊戲") + "排名";
+    const ol = document.createElement("ol");
+    ranking.forEach((p) => {
+      const it = document.createElement("li");
+      it.textContent =
+        gameKind === "count"
+          ? p.name + "　" + p.score + " 分" + (p.alive ? "" : "　淘汰")
+          : p.name + "　禮物 " + p.gifts + "　" + (p.alive ? "血 " + p.hp : "淘汰");
+      ol.appendChild(it);
+    });
+    det.append(sum, ol);
+    return det;
+  }
+
+  // 易手紀錄的一步，例如「第 7 回 Allen 搶到別份，順移給 Calla（第 2 名）」
+  function stepText(s) {
+    const head = "第 " + s.round_no + " 回 ";
+    if (s.how === "game") return head + (s.game_name || "小遊戲") + " → " + s.to + " 搶到";
+    if (s.how === "candidate") return head + "候選人 " + s.to + " 直接獲得";
+    if (s.how === "random") return head + "隨機 → " + s.to;
+    if (s.how === "pass") return head + s.from + " 搶到別份，順移給 " + s.to + "（第 " + s.rank + " 名）";
+    if (s.how === "pass_random") return head + s.from + " 搶到別份，隨機順移給 " + (s.to || "沒有人");
+    return head + "沒有人拿到";
+  }
+
+  // 誰拿到了：每份禮物一列（目前拿著的人），展開看搶奪順序
   function renderResults() {
     const list = document.getElementById("ex-results");
     list.textContent = "";
-    game.results.forEach((r) => {
+    const gifts = game.gifts || [];
+    gifts.forEach((g) => {
       const li = document.createElement("li");
       const gift = document.createElement("span");
       gift.className = "res-gift";
-      gift.textContent = r.animal + "的禮物" + (r.label ? "（" + r.label + "）" : "");
+      gift.textContent = g.animal + "的禮物" + (g.label ? "（" + g.label + "）" : "");
       const who = document.createElement("strong");
-      who.textContent = r.winner || "沒有人";
+      who.textContent = g.holder || "沒有人";
       li.append(gift, document.createTextNode(" → "), who);
-      if (r.ranking) {
-        // 小遊戲決定的：可展開看排名
-        const det = document.createElement("details");
-        const sum = document.createElement("summary");
-        sum.textContent = (r.game_name || "小遊戲") + "排名";
-        const ol = document.createElement("ol");
-        r.ranking.forEach((p) => {
-          const it = document.createElement("li");
-          it.textContent =
-            r.game === "count"
-              ? p.name + "　" + p.score + " 分" + (p.alive ? "" : "　淘汰")
-              : p.name + "　禮物 " + p.gifts + "　" + (p.alive ? "血 " + p.hp : "淘汰");
-          ol.appendChild(it);
-        });
-        det.append(sum, ol);
-        li.appendChild(det);
-      }
+      const det = document.createElement("details");
+      det.className = "res-steps";
+      keepOpen(det, "g" + g.gift_id);
+      const sum = document.createElement("summary");
+      sum.textContent = "搶奪順序（" + g.steps.length + " 次）";
+      const ol = document.createElement("ol");
+      g.steps.forEach((s) => {
+        const it = document.createElement("li");
+        if (s.how === "pass" || s.how === "pass_random") it.className = "passed";
+        it.textContent = stepText(s);
+        if (s.ranking) it.appendChild(rankingDetails(s.game, s.game_name, s.ranking, "g" + g.gift_id + "r" + s.round_no));
+        ol.appendChild(it);
+      });
+      det.append(sum, ol);
+      li.appendChild(det);
       list.appendChild(li);
     });
-    document.getElementById("ex-results-empty").hidden = game.results.length > 0;
+    document.getElementById("ex-results-empty").hidden = gifts.length > 0;
   }
 
   function renderContest() {
@@ -550,7 +586,8 @@
     if (!me) return;
     document.getElementById("ex-tickets").textContent = me.tickets + " / " + me.max_tickets;
     document.getElementById("ex-won").textContent = me.won
-      ? "你獲得了：" + me.won.animal + "的禮物" + (me.won.label ? "（" + me.won.label + "）" : "")
+      ? "你目前拿著：" + me.won.animal + "的禮物" + (me.won.label ? "（" + me.won.label + "）" : "") +
+        (me.tickets > 0 ? "　還可以用券搶下一份，搶到的話這份會順移給下一名" : "")
       : "";
     joinBtn.hidden = me.joined;
     leaveBtn.hidden = !me.joined;
@@ -575,7 +612,14 @@
     document.getElementById("ex-finished").hidden = !game.finished;
     if (shownResults !== null && game.results.length > shownResults) {
       const r = game.results[game.results.length - 1];
-      if (r.resolved_by !== "game") showBanner(r.animal + "的禮物 → " + (r.winner || "沒有人")); // 小遊戲已經公布過
+      if (r.passed) {
+        // 得主換了禮物：就算小遊戲公布過，也要告訴大家舊禮物順移給誰
+        const p = r.passed;
+        showBanner(
+          r.winner + " 搶到了！原本的" + p.animal + "的禮物順移給 " + (p.to || "沒有人") +
+            (p.rank ? "（第 " + p.rank + " 名）" : "")
+        );
+      } else if (r.resolved_by !== "game") showBanner(r.animal + "的禮物 → " + (r.winner || "沒有人")); // 小遊戲已經公布過
     }
     shownResults = game.results.length;
     updateCount();

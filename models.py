@@ -22,6 +22,7 @@ from migrations import (
     m006_add_exchange,
     m007_add_minigame,
     m008_add_game_kind,
+    m009_add_exchange_transfers,
 )
 
 PERMISSIONS = ("user", "admin")
@@ -96,6 +97,7 @@ class GameDB:
             m006_add_exchange.apply(self.conn)
             m007_add_minigame.apply(self.conn)
             m008_add_game_kind.apply(self.conn)
+            m009_add_exchange_transfers.apply(self.conn)
         # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
         self.round_sec: float = cms.EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
@@ -566,6 +568,7 @@ class GameDB:
     def _reset_exchange(self) -> None:
         """Clear rounds, challengers and winners, and refill everyone's tickets; caller holds the lock."""
         now = utc_now()
+        self.conn.execute("UPDATE exchange_transfers SET is_deleted = 1, deleted_at = ? WHERE is_deleted = 0", (now,))
         self.conn.execute("UPDATE exchange_challengers SET is_deleted = 1, deleted_at = ? WHERE is_deleted = 0", (now,))
         self.conn.execute("UPDATE exchange_rounds SET is_deleted = 1, deleted_at = ? WHERE is_deleted = 0", (now,))
         self.conn.execute("UPDATE players SET winner_id = NULL, won_at = NULL, tickets = ?", (self.start_tickets,))
@@ -632,14 +635,73 @@ class GameDB:
         head = [rnd["candidate_id"]] if rnd["candidate_id"] is not None else []
         return head + self._active_challengers(rnd["id"])
 
-    def _close_round(
-        self, rnd: sqlite3.Row, winner: int | None, how: str, at_epoch: float, result: str | None = None
+    def _log_transfer(
+        self, round_id: int, gift_id: int, from_id: int | None, to_id: int | None, how: str, rank: int | None = None
     ) -> None:
-        """Record the round's winner on the gift and close the round; caller holds the lock."""
+        """Append one hand-over of a gift to exchange_transfers; caller holds the lock and commits."""
+        self.conn.execute(
+            "INSERT INTO exchange_transfers (round_id, gift_id, from_id, to_id, how, rank, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (round_id, gift_id, from_id, to_id, how, rank, utc_now()),
+        )
+
+    def _pass_on(self, gift_id: int, from_id: int, order: list[int], round_id: int, at_epoch: float) -> int | None:
+        """Hand the winner's previous gift down the round's ranking; returns who got it (None = nobody).
+
+        依排名往下找第一位：不是電腦（id < 0）、不是得主、手上沒禮物、也不是這份禮物的主人。
+        排名裡找不到人時，從全場沒禮物的人隨機挑一位保底；還是沒有就讓這份禮物沒人拿著。
+        Caller holds the lock and commits.
+        """
+        owner = self.conn.execute("SELECT claimed_by FROM players WHERE id = ?", (gift_id,)).fetchone()
+        owner_id = owner["claimed_by"] if owner else None
+        to_id, how, rank = None, "pass", None
+        for i, pid in enumerate(order):
+            if pid is None or pid < 0 or pid == from_id or pid == owner_id or self._has_won(pid):
+                continue
+            to_id, rank = pid, i + 1
+            break
+        if to_id is None:
+            spare = [
+                r["id"]
+                for r in self.conn.execute(
+                    "SELECT p.id FROM players p WHERE p.is_deleted = 0 AND p.id IS NOT ? AND p.id != ? "
+                    "AND NOT EXISTS (SELECT 1 FROM players g WHERE g.winner_id = p.id AND g.is_deleted = 0)",
+                    (owner_id, from_id),
+                )
+            ]
+            to_id = secrets.SystemRandom().choice(spare) if spare else None
+            how = "pass_random"
+        self.conn.execute(
+            "UPDATE players SET winner_id = ?, won_at = ? WHERE id = ?",
+            (to_id, epoch_to_utc(at_epoch) if to_id is not None else None, gift_id),
+        )
+        self._log_transfer(round_id, gift_id, from_id, to_id, how, rank)
+        print(f"[models] gift {gift_id} passed on: {how}, rank {rank}, to {to_id}")
+        return to_id
+
+    def _close_round(
+        self,
+        rnd: sqlite3.Row,
+        winner: int | None,
+        how: str,
+        at_epoch: float,
+        result: str | None = None,
+        order: list[int] | None = None,
+    ) -> None:
+        """Record the round's winner on the gift and close the round; caller holds the lock.
+
+        得主手上原本就有禮物時，換成這份新禮物，舊的那份依 ``order``（本回合排名的 id）順移下去。
+        """
         if winner is not None:
+            prev = self.conn.execute(
+                "SELECT id FROM players WHERE winner_id = ? AND is_deleted = 0 AND id != ?", (winner, rnd["gift_id"])
+            ).fetchone()
             self.conn.execute(
                 "UPDATE players SET winner_id = ?, won_at = ? WHERE id = ?", (winner, epoch_to_utc(at_epoch), rnd["gift_id"])
             )
+            self._log_transfer(rnd["id"], rnd["gift_id"], None, winner, how)
+            if prev is not None:
+                self._pass_on(prev["id"], winner, order or [], rnd["id"], at_epoch)
         self.conn.execute(
             "UPDATE exchange_rounds SET status = 'closed', winner_id = ?, resolved_by = ?, game_result = ? WHERE id = ?",
             (winner, how, result, rnd["id"]),
@@ -701,9 +763,11 @@ class GameDB:
         battle = self._battle_for(rnd)
         if battle is None:
             pool = self._pool(rnd)
-            winner = secrets.SystemRandom().choice(pool) if pool else None
+            order = list(pool)
+            secrets.SystemRandom().shuffle(order)  # 打亂後當排名，第一位得獎、其餘給順移用
+            winner = order[0] if order else None
             print(f"[models] minigame of round {rnd['round_no']} lost (restart?), settled at random")
-            self._close_round(rnd, winner, "random" if winner else "nobody", now)
+            self._close_round(rnd, winner, "random" if winner else "nobody", now, order=order)
             return now
         battle.advance(now)
         if battle.finished_at is None:
@@ -712,7 +776,8 @@ class GameDB:
         if now < reveal_end:
             return None
         result = json.dumps(battle.ranking, ensure_ascii=False)
-        self._close_round(rnd, battle.winner, "game", battle.finished_at, result)
+        order = [r["id"] for r in battle.ranking or []]
+        self._close_round(rnd, battle.winner, "game", battle.finished_at, result, order)
         self.battle, self.battle_round_id, self.battle_kind = None, None, None
         return reveal_end
 
@@ -771,8 +836,7 @@ class GameDB:
             return "owner"
         if rnd["candidate_id"] == player["id"]:
             return "candidate"
-        if self._has_won(player["id"]):
-            return "already_won"
+        # 已經有禮物的人也能再用券搶下一份；搶到的話原本那份會順移給下一名
         if player["id"] in challengers:
             return "joined"
         if player["tickets"] <= 0:
@@ -797,7 +861,7 @@ class GameDB:
     def join_contest(self, token: str) -> str:
         """Join the contest for the gift under the spotlight, spending one ticket.
 
-        Returns ok / unknown / locked / no_round / owner / candidate / already_won / joined / no_ticket / full.
+        Returns ok / unknown / locked / no_round / owner / candidate / joined / no_ticket / full.
         """
         with self.lock:
             player, rnd, err = self._open_round_for(token)
@@ -835,6 +899,74 @@ class GameDB:
             self.conn.commit()
         print(f"[models] contest withdrawn: {player['en_name']} (round {rnd['round_no']})")
         return "ok"
+
+    def _transfer_history(self, names: dict[int, str]) -> tuple[dict[int, dict[str, Any]], list[dict[str, Any]]]:
+        """Return (passes by round_no, every drawn gift with its hand-over steps); caller holds the lock.
+
+        - passes：這回合得主換禮物時，舊禮物順移給誰（給結果橫幅用）
+        - gifts：抽過的禮物依第一次被抽到的回合排序，steps 是這份禮物每一次換人（沒人拿到的回合也列出）
+        """
+        rounds = {
+            r["id"]: r
+            for r in self.conn.execute(
+                "SELECT id, round_no, gift_id, winner_id, resolved_by, game_result, game_kind "
+                "FROM exchange_rounds WHERE is_deleted = 0 AND status = 'closed'"
+            )
+        }
+        gift_rows = {
+            r["id"]: r
+            for r in self.conn.execute("SELECT id, animal, label, winner_id FROM players")
+        }
+        steps: dict[int, list[tuple[int, int, dict[str, Any]]]] = {}
+        passes: dict[int, dict[str, Any]] = {}
+        for t in self.conn.execute(
+            "SELECT id, round_id, gift_id, from_id, to_id, how, rank FROM exchange_transfers "
+            "WHERE is_deleted = 0 ORDER BY id"
+        ):
+            rnd = rounds.get(t["round_id"])
+            if rnd is None:
+                continue
+            kind = rnd["game_kind"]
+            step = {
+                "round_no": rnd["round_no"],
+                "how": t["how"],
+                "from": names.get(t["from_id"]),
+                "to": names.get(t["to_id"]),
+                "rank": t["rank"],
+                "game_name": cms.MINIGAMES.get(kind) if kind else None,
+                "game": kind,
+                "ranking": json.loads(rnd["game_result"]) if t["how"] == "game" and rnd["game_result"] else None,
+            }
+            steps.setdefault(t["gift_id"], []).append((rnd["round_no"], t["id"], step))
+            if t["how"] in ("pass", "pass_random"):
+                g = gift_rows.get(t["gift_id"])
+                passes[rnd["round_no"]] = {
+                    "from": step["from"],
+                    "to": step["to"],
+                    "rank": t["rank"],
+                    "animal": g["animal"] if g else None,
+                    "label": g["label"] if g else None,
+                }
+        first_round: dict[int, int] = {}
+        for rnd in rounds.values():
+            gid = rnd["gift_id"]
+            first_round[gid] = min(first_round.get(gid, rnd["round_no"]), rnd["round_no"])
+            if rnd["winner_id"] is None:
+                steps.setdefault(gid, []).append((rnd["round_no"], 0, {
+                    "round_no": rnd["round_no"], "how": "nobody", "from": None, "to": None, "rank": None,
+                    "game_name": None, "game": None, "ranking": None,
+                }))
+        gifts = []
+        for gid in sorted(first_round, key=lambda g: first_round[g]):
+            g = gift_rows.get(gid)
+            gifts.append({
+                "gift_id": gid,
+                "animal": g["animal"] if g else None,
+                "label": g["label"] if g else None,
+                "holder": names.get(g["winner_id"]) if g else None,
+                "steps": [s for _, _, s in sorted(steps.get(gid, []), key=lambda x: (x[0], x[1]))],
+            })
+        return passes, gifts
 
     def exchange_state(self, token: str | None) -> dict[str, Any]:
         """Return the exchange game for the spotlight page.
@@ -910,6 +1042,9 @@ class GameDB:
                     "WHERE r.is_deleted = 0 AND r.status = 'closed' ORDER BY r.round_no"
                 )
             ]
+            passes, gifts = self._transfer_history(names)
+            for r in results:
+                r["passed"] = passes.get(r["round_no"])
             me: dict[str, Any] | None = None
             player = self.player_by_token(token) if token else None
             if player is not None:
@@ -936,6 +1071,7 @@ class GameDB:
                 "finished": rnd is not None and rnd["status"] == "closed",
                 "round": round_info,
                 "results": results,
+                "gifts": gifts,
                 "me": me,
                 "minigames": [{"key": k, "name": n} for k, n in cms.MINIGAMES.items()],  # 轉盤上的格子
             }
