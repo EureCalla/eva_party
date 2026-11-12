@@ -439,6 +439,7 @@
   const waitEl = document.getElementById("ex-wait");
   const bannerEl = document.getElementById("ex-banner");
   const startBtn = document.getElementById("ex-start");
+  const resetBtn = document.getElementById("ex-reset"); // 沙盒專用：重置測試資料
   const joinBtn = document.getElementById("ex-join");
   const leaveBtn = document.getElementById("ex-leave");
   const JOIN_REASONS = {
@@ -597,6 +598,7 @@
     const reason = document.getElementById("ex-reason");
     reason.textContent = me.joined ? "你已加入爭奪，倒數結束前可以退出（會退還搶奪券）" : JOIN_REASONS[me.reason] || "";
     startBtn.hidden = !(me.is_admin && !game.started);
+    resetBtn.hidden = !me.is_admin;
   }
 
   function applyGame() {
@@ -647,6 +649,21 @@
   joinBtn.addEventListener("click", () => contestAction("/api/exchange/join"));
   leaveBtn.addEventListener("click", () => contestAction("/api/exchange/withdraw"));
   startBtn.addEventListener("click", () => contestAction("/api/exchange/start"));
+
+  // 沙盒專用：重置測試資料（交換進度清空，順序、標籤、描述不動）
+  resetBtn.addEventListener("click", async () => {
+    const ok = window.confirm(
+      "要把交換禮物的進度全部清空嗎？\n\n回合、爭奪名單、誰拿到哪份禮物都會清掉，搶奪券回到 5 張，進行中的小遊戲也會結束。\n抽獎順序、標籤、描述不會動。",
+    );
+    if (!ok) return;
+    const msg = document.getElementById("ex-reset-msg");
+    resetBtn.disabled = true;
+    const r = await api("/api/sandbox/reset", {});
+    resetBtn.disabled = false;
+    msg.textContent = r.ok ? "已重置，管理者按「開始」就能重新測試" : "重置失敗（只有管理者可以重置）";
+    await loadGame();
+    applyGame();
+  });
 
   // ---------- 舞台下方：禮物主人修改自己的描述 ----------
   const descForm = document.getElementById("ex-desc");

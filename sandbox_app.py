@@ -35,6 +35,23 @@ class SandboxHandler(GameHandler):
         else:
             super().do_GET()
 
+    def do_POST(self) -> None:
+        """Reset the exchange progress (sandbox only, admins), otherwise behave like GameHandler."""
+        if urlsplit(self.path).path == "/api/sandbox/reset":
+            self.read_json()
+            token = self.headers.get("X-Token", "")
+            with self.db.lock:
+                player = self.db.player_by_token(token) if token else None
+                if player is None or player["permission"] != "admin":
+                    self.send_json({"result": "forbidden"}, 403)
+                    return
+                # 回合、爭奪名單、得主與易手紀錄清空、券回 5 張、進行中的小遊戲結束；順序、標籤、描述不動
+                self.db._reset_exchange()
+            print(f"[sandbox] exchange reset by {player['en_name']}")
+            self.send_json({"result": "ok"})
+        else:
+            super().do_POST()
+
     def send_home(self) -> None:
         """Serve the real index.html with the sandbox bridge script added to <head>.
 

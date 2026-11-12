@@ -71,6 +71,8 @@
   #exchange { padding-top: 56px; }
 }
 .ex-note a { color: var(--dress); }
+.ex-tools { max-width: 960px; margin: 14px auto 0; display: flex; align-items: center; gap: 12px; }
+.ex-tools .ex-reason { color: var(--cream); }
 #ex-seed { margin-left: 0.6em; }
 
 /* 舞台下方：禮物主人修改描述 */

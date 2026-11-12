@@ -117,6 +117,11 @@
       <p id="ex-results-empty" class="ex-reason">還沒有禮物送出</p>
       <ol id="ex-results" class="ex-results"></ol>
     </section>
+    <!-- 沙盒專用：管理者一鍵把交換禮物進度清空，重新測試 -->
+    <div class="ex-tools">
+      <button id="ex-reset" type="button" class="pixel-btn small ex-plain" hidden>重置測試資料</button>
+      <span id="ex-reset-msg" class="ex-reason"></span>
+    </div>
     <p class="ex-note">沙盒驗收用：管理者按「開始」後每份禮物倒數，時間到自動換下一份（<code>python sandbox_app.py --round-sec 30</code> 可縮短倒數）；有人爭奪時倒數結束進小遊戲（<code>--game-sec 30</code> 縮短；沒操作的參賽者就站著不動）。到 <a href="/">首頁</a> 用管理頁切回別的階段再切進「交換禮物遊戲」會整局重來。<span id="ex-seed"></span></p>
   </section>
 
