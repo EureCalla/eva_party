@@ -5,13 +5,19 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import mpivr20_cms as cms
-from models import GameDB
+from minigame import map_info
+from models import DESCRIPTION_MAX, GameDB
 
 
 class GameHandler(SimpleHTTPRequestHandler):
     """Serve files from the static directory and route /api/* to GameDB."""
+
+    # 保持連線（keep-alive）：小遊戲每秒很多請求，省掉每次重新連線；閒置 30 秒就關
+    protocol_version = "HTTP/1.1"
+    timeout = 30
 
     def __init__(self, *args: Any, db: GameDB, **kwargs: Any) -> None:
         """Keep a reference to the shared GameDB."""
@@ -24,8 +30,8 @@ class GameHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, format: str, *args: Any) -> None:
-        """Only log API calls, not every static file."""
-        if self.path.startswith("/api/"):
+        """Only log API calls, not every static file nor the minigame's many-per-second calls."""
+        if self.path.startswith("/api/") and not self.path.startswith("/api/minigame/"):
             print(f"[server] {self.command} {self.path} {args[1] if len(args) > 1 else ''}")
 
     def send_json(self, data: Any, status: int = 200) -> None:
@@ -54,7 +60,19 @@ class GameHandler(SimpleHTTPRequestHandler):
             data = self.db.state(self.headers.get("X-Token"))
             data["labels"] = cms.GIFT_LABELS
             data["stages"] = [{"key": k, "name": n} for k, n in cms.STAGES]
+            data["description_max"] = DESCRIPTION_MAX
             self.send_json(data)
+        elif self.path == "/api/exchange":
+            self.send_json(self.db.exchange_state(self.headers.get("X-Token")))
+        elif self.path == "/api/minigame/map":
+            self.send_json(map_info())
+        elif self.path.startswith("/api/minigame/watch"):
+            try:
+                since = float(parse_qs(urlsplit(self.path).query).get("since", ["0"])[0])
+            except ValueError:
+                since = 0.0
+            result, data = self.db.minigame_watch(since)
+            self.send_json(data if data is not None else {"result": result}, 200 if data is not None else 409)
         elif self.path == "/api/admin/players":
             if not self.db.is_admin(self.headers.get("X-Token")):
                 self.send_json({"error": "只有管理者可以使用"}, 403)
@@ -109,7 +127,7 @@ class GameHandler(SimpleHTTPRequestHandler):
         self.send_json({"result": "ok", **self.admin_people()})
 
     def do_POST(self) -> None:
-        """Handle login, guesses, labels and admin actions."""
+        """Handle login, guesses, labels, descriptions, the exchange contest and admin actions."""
         data = self.read_json()
         if self.path == "/api/login":
             token = self.db.login(str(data.get("name", "")), str(data.get("password", "")))
@@ -129,10 +147,96 @@ class GameHandler(SimpleHTTPRequestHandler):
             result = self.db.set_label(self.headers.get("X-Token", ""), str(data.get("label", "")), cms.GIFT_LABELS)
             status = {"ok": 200, "unknown": 401, "invalid": 400, "not_claimed": 409, "locked": 409}[result]
             self.send_json({"result": result}, status)
-        elif self.path == "/api/admin/stage":
-            result = self.db.set_stage(self.headers.get("X-Token", ""), str(data.get("stage", "")), cms.STAGE_KEYS)
-            status = {"ok": 200, "forbidden": 403, "invalid": 400}[result]
+        elif self.path == "/api/exchange/start":
+            result = self.db.start_exchange(self.headers.get("X-Token", ""))
+            status = {"ok": 200, "forbidden": 403, "locked": 409, "started": 409, "empty": 409}[result]
             self.send_json({"result": result}, status)
+        elif self.path in ("/api/exchange/join", "/api/exchange/withdraw"):
+            token = self.headers.get("X-Token", "")
+            join = self.path.endswith("/join")
+            result = self.db.join_contest(token) if join else self.db.withdraw_contest(token)
+            self.send_json({"result": result}, {"ok": 200, "unknown": 401}.get(result, 409))
+        elif self.path == "/api/minigame/input":
+            try:
+                x, y = float(data.get("x")), float(data.get("y"))
+                fx, fy = int(data.get("fx", 0)), int(data.get("fy", 0))
+                seq = None if data.get("seq") is None else int(data.get("seq"))
+                power = float(data.get("power", 0.5))  # 蓄力 0~1
+            except (TypeError, ValueError):
+                self.send_json({"error": "x / y / fx / fy / seq / power 格式不對"}, 400)
+                return
+            result, snap = self.db.minigame_input(
+                self.headers.get("X-Token", ""), x, y, fx, fy, bool(data.get("throw")), seq, power
+            )
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/minigame/count":
+            n = data.get("n")
+            if n is not None and (not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 9):
+                self.send_json({"error": "n 要是 1~9 或 null"}, 400)
+                return
+            result, snap = self.db.minigame_count(self.headers.get("X-Token", ""), n)
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/minigame/mom":
+            spits = data.get("spits", [])
+            seq = data.get("seq")
+            if (
+                not isinstance(spits, list) or len(spits) > 10
+                or any(not isinstance(x, int) or isinstance(x, bool) for x in spits)
+                or (seq is not None and (not isinstance(seq, int) or isinstance(seq, bool)))
+            ):
+                self.send_json({"error": "spits 要是最多 10 個整數、seq 要是整數"}, 400)
+                return
+            result, snap = self.db.minigame_mom(self.headers.get("X-Token", ""), bool(data.get("hold")), spits, seq)
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/minigame/spell":
+            word, keys, start = data.get("word"), data.get("keys", ""), data.get("from")
+            if any(v is not None and (not isinstance(v, int) or isinstance(v, bool)) for v in (word, start)):
+                self.send_json({"error": "word / from 要是整數或 null"}, 400)
+                return
+            if not isinstance(keys, str) or len(keys) > 20 or any(c not in "abcdefghijklmnopqrstuvwxyz" for c in keys):
+                self.send_json({"error": "keys 只能是 a～z，最多 20 個字"}, 400)
+                return
+            result, snap = self.db.minigame_spell(self.headers.get("X-Token", ""), word, keys, start)
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/minigame/climb":
+            try:
+                x, y, vy = float(data.get("x")), float(data.get("y")), float(data.get("vy", 0))
+                face, move = int(data.get("face", 1)), int(data.get("move", 0))
+                seq = None if data.get("seq") is None else int(data.get("seq"))
+                have, kick_ack = int(data.get("have", 0)), int(data.get("kick_ack", 0))
+                land = None if data.get("land") is None else (float(data["land"][0]), float(data["land"][1]))
+            except (TypeError, ValueError, IndexError, KeyError):
+                self.send_json({"error": "x / y / vy / face / move / seq / have / kick_ack / land 格式不對"}, 400)
+                return
+            result, snap = self.db.minigame_climb(
+                self.headers.get("X-Token", ""), x, y, vy, bool(data.get("grounded")), face, move, seq, have, kick_ack, land
+            )
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/description":
+            result = self.db.set_description(self.headers.get("X-Token", ""), str(data.get("description", "")))
+            status = {"ok": 200, "unknown": 401, "empty": 400, "too_long": 400, "not_claimed": 409, "locked": 409}
+            self.send_json({"result": result}, status[result])
+        elif self.path == "/api/admin/stage":
+            result, detail = self.db.set_stage(
+                self.headers.get("X-Token", ""), str(data.get("stage", "")), cms.STAGE_KEYS
+            )
+            status = {"ok": 200, "forbidden": 403, "invalid": 400, "incomplete": 409}[result]
+            self.send_json({"result": result, **detail}, status)
         elif self.path == "/api/admin/players":
             self.admin_players_action(data)
         else:

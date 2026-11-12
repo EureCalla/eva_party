@@ -23,3 +23,31 @@ STAGES: list[tuple[str, str]] = [
     ("feast", "共享盛宴"),
 ]
 STAGE_KEYS: list[str] = [k for k, _ in STAGES]
+
+# 交換禮物遊戲：聚光燈每份禮物倒數秒數、每份禮物最多幾位挑戰者（不含候選人）、每人初始搶奪券
+EXCHANGE_ROUND_SEC: int = 180
+MAX_CHALLENGERS: int = 5
+START_TICKETS: int = 5
+
+# 小遊戲（丟石頭搶禮物）：倒數結束且有人爭奪時，候選人＋挑戰者進場 PK
+GAME_PREP_SEC: int = 15  # 進場準備：看玩法說明＋3-2-1
+GAME_SEC: int = 120  # 遊戲時間（2 分鐘）
+GAME_REVEAL_SEC: int = 5  # 公布結果，之後聚光燈才換下一份
+GAME_HP: int = 5  # 每人血量
+
+# 五種小遊戲，每次進小遊戲隨機抽一種（沙盒可用 --game 指定）
+MINIGAMES: dict[str, str] = {"stones": "雪地大亂鬥", "count": "報數遊戲", "climb": "往上跳跳樂", "spell": "鍵盤詠唱師", "mom": "誰是乖孩子"}
+COUNT_GAME_SEC: int = 60  # 報數遊戲時間（1 分鐘）
+COUNT_BOTS: int = 2  # 報數遊戲多加的電腦玩家
+CLIMB_GAME_SEC: int = 90  # 往上跳跳樂時間（1.5 分鐘）
+SPELL_GAME_SEC: int = 60  # 鍵盤詠唱師時間（1 分鐘，每 5 秒一組字母）
+MOM_GAME_SEC: int = 120  # 誰是乖孩子時間（2 分鐘，滑鼠操作）
+SPIN_SEC: int = 3  # 進小遊戲前的轉盤秒數；轉完才公開這局玩哪一種
+
+# 沙盒：設計新階段畫面用，與正式 server／正式 DB 完全分開，驗收後才合併
+# sandbox.db 由 tools/build_sandbox_db.py 從正式 DB 唯讀複製產生，不進版控（.gitignore 的 *.db）
+SANDBOX_DIR: Path = ROOT_DIR / "sandbox"
+SANDBOX_DB_PATH: Path = SANDBOX_DIR / "sandbox.db"
+SANDBOX_PORT: int = 8478
+SANDBOX_STAGE: str = "exchange"  # 沙盒 DB 建好後直接切到這個階段
+SANDBOX_PAGE: str = "/sandbox/exchange.html"  # 沙盒畫面，放在 static/sandbox/

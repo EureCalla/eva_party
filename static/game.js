@@ -346,6 +346,10 @@
     exchange: "交換禮物遊戲進行中",
     feast: "一起享用大餐吧！",
   };
+  // 可以寫／改禮物描述的階段（與 models.DESCRIBE_STAGES 一致，server 端會再檢查）
+  const DESCRIBE_STAGES = ["reveal", "exchange"];
+  let descMax = 50;
+  let descPromptedStage = null; // 這個階段已經自動跳過描述視窗，避免每次輪詢都跳
 
   // pose：rest 平放、stand 站、squat 蹲；label 決定包裝紙顏色
   function drawGift(ctx, pose, label) {
@@ -392,7 +396,16 @@
       el.append(cv, tag, label);
       el.addEventListener("click", () => onGiftClick(g.gift_id));
       giftsEl.appendChild(el);
-      const tile = { el, ctx: cv.getContext("2d"), tag, label, animal: g.animal, claimed: false, giftLabel: null };
+      const tile = {
+        el,
+        ctx: cv.getContext("2d"),
+        tag,
+        label,
+        animal: g.animal,
+        claimed: false,
+        giftLabel: null,
+        described: false,
+      };
       tiles.set(g.gift_id, tile);
       drawGift(tile.ctx, "rest");
     });
@@ -416,19 +429,34 @@
     });
   }
 
+  function canDescribe() {
+    return DESCRIBE_STAGES.includes(stage) && !!(me && me.gift_id);
+  }
+
   function updateHint() {
     const seating = stage === "seating";
     wallEl.classList.toggle("locked", !seating);
     wallEl.classList.toggle("done", !seating || !!(me && me.gift_id));
-    if (!seating) hintEl.textContent = STAGE_HINT[stage] || "";
+    wallEl.classList.toggle("describe", canDescribe()); // 自己的禮物可以點開寫描述
+    if (canDescribe() && !me.description) hintEl.textContent = "標籤公布！點你的禮物寫下禮物描述";
+    else if (canDescribe()) hintEl.textContent = (STAGE_HINT[stage] || "") + "（描述隨時可以再修改）";
+    else if (!seating) hintEl.textContent = STAGE_HINT[stage] || "";
     else if (me && me.gift_id) hintEl.textContent = "你是" + me.animal + "！點你的禮物可以換標籤";
     else hintEl.textContent = "猜猜哪個是你的禮物？";
+  }
+
+  // 進到可寫描述的階段、自己還沒寫：每個階段自動跳一次描述視窗
+  function promptDescription() {
+    if (!canDescribe() || me.description || descPromptedStage === stage) return;
+    descPromptedStage = stage;
+    if (pickerEl.hidden && adminEl.hidden) openDesc();
   }
 
   function applyState(data) {
     if (data.labels) labels = data.labels;
     if (data.stages) stages = data.stages;
     if (data.stage) stage = data.stage;
+    if (data.description_max) descMax = data.description_max;
     // 登入的人被管理者刪掉了：回登入頁
     if (token() && !data.me && !wallEl.hidden) return backToLogin();
     if (data.me) me = data.me;
@@ -449,11 +477,13 @@
         tile.drawn = false;
       }
       tile.claimed = g.claimed;
+      tile.described = !!g.described;
       tile.el.classList.toggle("claimed", g.claimed);
       tile.el.classList.toggle("mine", !!me && me.gift_id === g.gift_id);
       if (!g.claimed) drawGift(tile.ctx, "rest", g.label);
     });
     updateHint();
+    if (!wallEl.hidden) promptDescription();
   }
 
   async function refreshState() {
@@ -472,18 +502,23 @@
     requestAnimationFrame(legsFrame);
   }
 
-  // 長出腳的禮物：每 0.4 秒蹲、站交替
-  let lastPose = null;
+  // 長出腳的禮物：每 0.4 秒蹲、站交替；寫好描述的禮物跳快一倍（0.2 秒）
+  const STEP_MS = 400;
+  const STEP_MS_DESCRIBED = 200;
   function legsFrame(ms) {
-    const pose = Math.floor(ms / 400) % 2 ? "squat" : "stand";
     tiles.forEach((tile) => {
-      if (tile.claimed && (pose !== lastPose || !tile.drawn)) {
+      if (!tile.claimed) {
+        tile.drawn = false;
+        return;
+      }
+      const step = tile.described ? STEP_MS_DESCRIBED : STEP_MS;
+      const pose = Math.floor(ms / step) % 2 ? "squat" : "stand";
+      if (pose !== tile.pose || !tile.drawn) {
         drawGift(tile.ctx, pose, tile.giftLabel);
+        tile.pose = pose;
         tile.drawn = true;
       }
-      if (!tile.claimed) tile.drawn = false;
     });
-    lastPose = pose;
     if (!wallEl.hidden) requestAnimationFrame(legsFrame);
   }
 
@@ -501,14 +536,21 @@
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     me = null;
+    descPromptedStage = null;
     closePicker();
+    closeDesc();
     document.getElementById("admin").hidden = true;
     show("login");
   }
 
   async function onGiftClick(giftId) {
     const tile = tiles.get(giftId);
-    if (!tile || stage !== "seating") return; // 對號入座之後禮物牆只能看
+    if (!tile) return;
+    // 公布標籤、交換禮物：點自己的禮物寫／改描述；其他禮物只能看
+    if (stage !== "seating") {
+      if (canDescribe() && me.gift_id === giftId) openDesc();
+      return;
+    }
     if (me && me.gift_id === giftId) return openPicker();
     if (tile.claimed || (me && me.gift_id)) return;
     const r = await api("/api/guess", { gift_id: giftId });
@@ -540,6 +582,49 @@
   function closePicker() {
     pickerEl.hidden = true;
   }
+  // ---------- 禮物描述（公布標籤、交換禮物階段；只有自己看得到） ----------
+  const descEl = document.getElementById("desc-editor");
+  const descForm = document.getElementById("desc-form");
+  const descInput = document.getElementById("desc-input");
+  const descCount = document.getElementById("desc-count");
+  const descErr = document.getElementById("desc-error");
+  const DESC_ERRORS = {
+    empty: "請先寫一點描述",
+    too_long: "描述太長了",
+    locked: "現在不能修改描述了",
+    not_claimed: "你還沒有認領禮物",
+  };
+
+  function updateDescCount() {
+    descCount.textContent = descInput.value.trim().length + " / " + descMax;
+  }
+  function openDesc() {
+    descInput.maxLength = descMax;
+    descInput.value = (me && me.description) || "";
+    descErr.hidden = true;
+    updateDescCount();
+    descEl.hidden = false;
+    descInput.focus();
+  }
+  function closeDesc() {
+    descEl.hidden = true;
+  }
+  descInput.addEventListener("input", updateDescCount);
+  descForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const r = await api("/api/description", { description: descInput.value });
+    if (r.status === 401) return backToLogin();
+    if (!r.ok) {
+      descErr.textContent = DESC_ERRORS[r.data.result] || "送出失敗";
+      descErr.hidden = false;
+      if (r.data.result === "locked") await refreshState();
+      return;
+    }
+    closeDesc();
+    await refreshState();
+  });
+  document.getElementById("desc-cancel").addEventListener("click", closeDesc);
+
   async function chooseLabel(lb) {
     const r = await api("/api/label", { label: lb });
     if (r.status === 401) return backToLogin();
@@ -665,6 +750,24 @@
     await loadPeople();
   }
 
+  // 切換階段被擋下：列出還沒選標籤／還沒寫描述的人
+  const blockEl = document.getElementById("stage-block");
+  const BLOCK_WHAT = { label: "選標籤", description: "寫禮物描述" };
+  function showStageBlock(key, missing, names) {
+    const s = stages.find((x) => x.key === key);
+    document.getElementById("stage-block-msg").textContent =
+      "要切到「" + (s ? s.name : key) + "」，還有 " + names.length + " 位沒有" + (BLOCK_WHAT[missing] || "完成") + "：";
+    const list = document.getElementById("stage-block-names");
+    list.textContent = "";
+    names.forEach((n) => {
+      const li = document.createElement("li");
+      li.textContent = n;
+      list.appendChild(li);
+    });
+    blockEl.hidden = false;
+  }
+  document.getElementById("stage-block-ok").addEventListener("click", () => (blockEl.hidden = true));
+
   document.getElementById("admin-btn").addEventListener("click", openAdmin);
   document.getElementById("admin-close").addEventListener("click", () => (adminEl.hidden = true));
   document.getElementById("stage-submit").addEventListener("click", async () => {
@@ -672,6 +775,7 @@
     if (!sel) return;
     const r = await api("/api/admin/stage", { stage: sel.value });
     if (r.status === 403) return adminNotice("只有管理者可以切換階段");
+    if (r.data.result === "incomplete") return showStageBlock(sel.value, r.data.missing, r.data.names);
     if (!r.ok) return adminNotice("切換失敗");
     await refreshState();
     renderStageOptions();

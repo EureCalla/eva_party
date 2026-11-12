@@ -125,11 +125,39 @@
     </div>
   </div>
 
+  <!-- 公布標籤起：寫禮物描述（點自己的禮物可修改） -->
+  <div id="desc-editor" class="overlay" hidden>
+    <form id="desc-form" class="card">
+      <h2 class="card-title picker-title">寫下禮物描述</h2>
+      <p class="card-sub">形容一下你帶來的禮物</p>
+      <textarea id="desc-input" rows="3" maxlength="50" required></textarea>
+      <p id="desc-count" class="desc-count">0 / 50</p>
+      <ul class="desc-notes">
+        <li><strong>不可以直接寫出禮物是什麼喔！</strong></li>
+        <li>送出後隨時可以再修改，但請先寫一個描述</li>
+      </ul>
+      <p id="desc-error" class="error" hidden></p>
+      <button type="submit" class="pixel-btn">送出</button>
+      <button id="desc-cancel" type="button" class="link-btn">等一下再寫</button>
+    </form>
+  </div>
+
+  <!-- 管理者切換階段時，還有人沒完成：列出名字 -->
+  <div id="stage-block" class="overlay" hidden>
+    <div class="card">
+      <h2 class="card-title picker-title">還不能切換</h2>
+      <p id="stage-block-msg" class="card-sub"></p>
+      <ul id="stage-block-names" class="block-names"></ul>
+      <button id="stage-block-ok" type="button" class="pixel-btn">知道了</button>
+    </div>
+  </div>
+
   <script src="sprites.js"></script>
   <script src="trailer.js"></script>
   <script src="ep2.js"></script>
   <script src="ep3.js"></script>
   <script src="ep4.js"></script>
+  <script src="ep5.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
