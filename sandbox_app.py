@@ -88,11 +88,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--game-sec", type=float, default=cms.GAME_SEC,
-        help=f"雪地大亂鬥的遊戲秒數，預設 {cms.GAME_SEC}；測試時可縮短，例如 30（報數遊戲固定 {cms.COUNT_GAME_SEC} 秒、往上跳跳樂 {cms.CLIMB_GAME_SEC} 秒、鍵盤詠唱師 {cms.SPELL_GAME_SEC} 秒）",
+        help=f"雪地大亂鬥的遊戲秒數，預設 {cms.GAME_SEC}；測試時可縮短，例如 30（報數遊戲固定 {cms.COUNT_GAME_SEC} 秒、往上跳跳樂 {cms.CLIMB_GAME_SEC} 秒、鍵盤詠唱師 {cms.SPELL_GAME_SEC} 秒、誰是乖孩子 {cms.MOM_GAME_SEC} 秒）",
     )
     parser.add_argument(
         "--game", choices=["random", *cms.MINIGAMES], default="random",
-        help="小遊戲種類：random（預設，隨機）、stones（雪地大亂鬥）、count（報數遊戲）、climb（往上跳跳樂）、spell（鍵盤詠唱師）",
+        help="小遊戲種類：random（預設，隨機）、stones（雪地大亂鬥）、count（報數遊戲）、climb（往上跳跳樂）、spell（鍵盤詠唱師）、mom（誰是乖孩子）",
     )
     args = parser.parse_args()
     info = Introduce()

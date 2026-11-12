@@ -182,6 +182,21 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.send_json(snap)
             else:
                 self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/minigame/mom":
+            spits = data.get("spits", [])
+            seq = data.get("seq")
+            if (
+                not isinstance(spits, list) or len(spits) > 10
+                or any(not isinstance(x, int) or isinstance(x, bool) for x in spits)
+                or (seq is not None and (not isinstance(seq, int) or isinstance(seq, bool)))
+            ):
+                self.send_json({"error": "spits 要是最多 10 個整數、seq 要是整數"}, 400)
+                return
+            result, snap = self.db.minigame_mom(self.headers.get("X-Token", ""), bool(data.get("hold")), spits, seq)
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
         elif self.path == "/api/minigame/spell":
             word, keys = data.get("word"), data.get("keys", "")
             if word is not None and (not isinstance(word, int) or isinstance(word, bool)):

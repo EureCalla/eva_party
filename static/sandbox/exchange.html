@@ -81,6 +81,15 @@
         <div id="sg-live" class="mg-live" hidden>直播（延遲約 1.5 秒）</div>
         <div id="sg-center" class="mg-center" hidden></div>
       </div>
+      <!-- 誰是乖孩子：滑鼠操作，右鍵吃西瓜、左鍵吐籽，媽媽睜眼時不能動 -->
+      <div id="mm" class="mg" hidden>
+        <canvas id="mm-canvas" width="1280" height="760"></canvas>
+        <div id="mm-timer" class="mg-timer"></div>
+        <div id="mm-hud" class="mg-hud" hidden></div>
+        <ol id="mm-board" class="mg-board"></ol>
+        <div id="mm-live" class="mg-live" hidden>直播（延遲約 1.5 秒）</div>
+        <div id="mm-center" class="mg-center" hidden></div>
+      </div>
       <!-- 轉盤：進小遊戲前轉 3 秒，轉完才知道這局玩什麼 -->
       <div id="wheel" class="mg" hidden>
         <canvas id="wheel-canvas" width="1280" height="760"></canvas>
@@ -139,6 +148,7 @@
   <script src="countgame.js"></script>
   <script src="climbgame.js"></script>
   <script src="spellgame.js"></script>
+  <script src="momgame.js"></script>
   <script src="wheel.js"></script>
   <script src="exchange.js"></script>
 </body>

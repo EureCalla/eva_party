@@ -14,6 +14,7 @@ import mpivr20_cms as cms
 from climbgame import ClimbBattle
 from countgame import CountBattle
 from minigame import StoneBattle
+from momgame import MomBattle
 from spellgame import SpellBattle
 from migrations import (
     m001_add_gift_label,
@@ -113,10 +114,11 @@ class GameDB:
         self.count_bots: int = cms.COUNT_BOTS
         self.climb_game_sec: float = cms.CLIMB_GAME_SEC
         self.spell_game_sec: float = cms.SPELL_GAME_SEC
-        self.game_mode: str = "random"  # 小遊戲種類：random（隨機）／stones／count／climb／spell；沙盒可指定
+        self.mom_game_sec: float = cms.MOM_GAME_SEC
+        self.game_mode: str = "random"  # 小遊戲種類：random（隨機）／stones／count／climb／spell／mom；沙盒可指定
         self.spin_sec: float = cms.SPIN_SEC
-        self.battle: StoneBattle | CountBattle | ClimbBattle | SpellBattle | None = None  # 進行中的小遊戲（只在記憶體）
-        self.battle_kind: str | None = None  # stones / count / climb / spell
+        self.battle: StoneBattle | CountBattle | ClimbBattle | SpellBattle | MomBattle | None = None  # 進行中的小遊戲（只在記憶體）
+        self.battle_kind: str | None = None  # stones / count / climb / spell / mom
         self.battle_spin_end: float = 0.0  # 轉盤轉完的時間；之前不公開遊戲種類
         self.battle_round_id: int | None = None
         self._token_ids: dict[str, int] = {}  # 小遊戲每秒很多次請求，token→player id 快取免得一直查 DB
@@ -749,6 +751,8 @@ class GameDB:
             self.battle = ClimbBattle(players, prep_epoch, self.game_prep_sec, self.climb_game_sec)
         elif kind == "spell":
             self.battle = SpellBattle(players, prep_epoch, self.game_prep_sec, self.spell_game_sec)
+        elif kind == "mom":
+            self.battle = MomBattle(players, prep_epoch, self.game_prep_sec, self.mom_game_sec)
         else:
             self.battle = StoneBattle(players, prep_epoch, self.game_prep_sec, self.game_sec, self.game_hp)
         self.battle_kind = kind
@@ -1168,6 +1172,27 @@ class GameDB:
         if not isinstance(battle, SpellBattle):
             return "not_player", None
         snap = battle.type(pid, word_id, keys, self.clock())
+        if snap is None:
+            return "not_player", None
+        snap["me"] = pid
+        return "ok", snap
+
+    def minigame_mom(
+        self, token: str, hold: bool, spits: list[int], seq: int | None = None,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Report the right button (eating) and spit clicks in the Mom game; returns (ok, snapshot) or an error.
+
+        Errors: (unknown | no_game | not_player, None).
+        """
+        pid = self._player_id(token)
+        if pid is None:
+            return "unknown", None
+        battle = self.battle
+        if battle is None or self.clock() < self.battle_spin_end:
+            return "no_game", None
+        if not isinstance(battle, MomBattle):
+            return "not_player", None
+        snap = battle.report(pid, hold, spits, self.clock(), seq)
         if snap is None:
             return "not_player", None
         snap["me"] = pid
