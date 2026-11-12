@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import mpivr20_cms as cms
+from countgame import CountBattle
 from minigame import StoneBattle
 from migrations import (
     m001_add_gift_label,
@@ -20,6 +21,7 @@ from migrations import (
     m005_add_gift_description,
     m006_add_exchange,
     m007_add_minigame,
+    m008_add_game_kind,
 )
 
 PERMISSIONS = ("user", "admin")
@@ -93,6 +95,7 @@ class GameDB:
             m005_add_gift_description.apply(self.conn)
             m006_add_exchange.apply(self.conn)
             m007_add_minigame.apply(self.conn)
+            m008_add_game_kind.apply(self.conn)
         # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
         self.round_sec: float = cms.EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
@@ -102,7 +105,11 @@ class GameDB:
         self.game_sec: float = cms.GAME_SEC
         self.game_reveal_sec: float = cms.GAME_REVEAL_SEC
         self.game_hp: int = cms.GAME_HP
-        self.battle: StoneBattle | None = None  # 進行中的小遊戲（只在記憶體）
+        self.count_game_sec: float = cms.COUNT_GAME_SEC
+        self.count_bots: int = cms.COUNT_BOTS
+        self.game_mode: str = "random"  # 小遊戲種類：random（隨機）／stones／count；沙盒可指定
+        self.battle: StoneBattle | CountBattle | None = None  # 進行中的小遊戲（只在記憶體）
+        self.battle_kind: str | None = None  # stones / count
         self.battle_round_id: int | None = None
         self._token_ids: dict[str, int] = {}  # 小遊戲每秒很多次請求，token→player id 快取免得一直查 DB
         print(f"[models] DB ready: {db_path}")
@@ -666,12 +673,19 @@ class GameDB:
             r["id"]: r for r in self.conn.execute(f"SELECT id, en_name, label FROM players WHERE id IN ({marks})", pool)
         }
         players = [{"id": pid, "name": rows[pid]["en_name"], "label": rows[pid]["label"]} for pid in pool if pid in rows]
-        self.battle = StoneBattle(players, game_epoch, self.game_prep_sec, self.game_sec, self.game_hp)
+        kind = self.game_mode if self.game_mode in cms.MINIGAMES else secrets.SystemRandom().choice(list(cms.MINIGAMES))
+        if kind == "count":
+            self.battle = CountBattle(players, game_epoch, self.game_prep_sec, self.count_game_sec, self.count_bots)
+        else:
+            self.battle = StoneBattle(players, game_epoch, self.game_prep_sec, self.game_sec, self.game_hp)
+        self.battle_kind = kind
         self.battle_round_id = round_id
+        self.conn.execute("UPDATE exchange_rounds SET game_kind = ? WHERE id = ?", (kind, round_id))
+        self.conn.commit()
         self._token_ids.clear()
-        print(f"[models] minigame started: round {round_id}, {len(players)} players")
+        print(f"[models] minigame started: round {round_id}, {cms.MINIGAMES[kind]}, {len(players)} players")
 
-    def _battle_for(self, rnd: sqlite3.Row) -> StoneBattle | None:
+    def _battle_for(self, rnd: sqlite3.Row) -> StoneBattle | CountBattle | None:
         """Return the in-memory minigame of a 'game' round, or None when it was lost (server restarted)."""
         return self.battle if self.battle is not None and self.battle_round_id == rnd["id"] else None
 
@@ -695,7 +709,7 @@ class GameDB:
             return None
         result = json.dumps(battle.ranking, ensure_ascii=False)
         self._close_round(rnd, battle.winner, "game", battle.finished_at, result)
-        self.battle, self.battle_round_id = None, None
+        self.battle, self.battle_round_id, self.battle_kind = None, None, None
         return reveal_end
 
     def _tick(self) -> None:
@@ -859,6 +873,12 @@ class GameDB:
                         "finished_at": battle.finished_at,
                         "reveal_end": None if battle.finished_at is None else battle.finished_at + self.game_reveal_sec,
                         "ranking": battle.ranking,
+                        "game": self.battle_kind,
+                        "game_name": cms.MINIGAMES.get(self.battle_kind),
+                        # 公布用：報數遊戲第一名可能是電腦，禮物給最高分的真人
+                        "winner_name": next(
+                            (r["name"] for r in battle.ranking or [] if r["id"] == battle.winner), None
+                        ),
                     })
             results = [
                 {
@@ -869,9 +889,12 @@ class GameDB:
                     "winner": names.get(r["winner_id"]),
                     "resolved_by": r["resolved_by"],
                     "ranking": json.loads(r["game_result"]) if r["game_result"] else None,
+                    "game": r["game_kind"],
+                    "game_name": cms.MINIGAMES.get(r["game_kind"]) if r["game_kind"] else None,
                 }
                 for r in self.conn.execute(
-                    "SELECT r.round_no, r.gift_id, r.winner_id, r.resolved_by, r.game_result, g.animal, g.label "
+                    "SELECT r.round_no, r.gift_id, r.winner_id, r.resolved_by, r.game_result, r.game_kind, "
+                    "g.animal, g.label "
                     "FROM exchange_rounds r JOIN players g ON g.id = r.gift_id "
                     "WHERE r.is_deleted = 0 AND r.status = 'closed' ORDER BY r.round_no"
                 )
@@ -929,7 +952,28 @@ class GameDB:
         battle = self.battle
         if battle is None:
             return "no_game", None
+        if not isinstance(battle, StoneBattle):
+            return "not_player", None
         snap = battle.report(pid, x, y, fx, fy, throw, self.clock(), seq, power)
+        if snap is None:
+            return "not_player", None
+        snap["me"] = pid
+        return "ok", snap
+
+    def minigame_count(self, token: str, n: int | None) -> tuple[str, dict[str, Any] | None]:
+        """Call a number in the counting game (or poll when ``n`` is None); returns (ok, snapshot with result).
+
+        Errors: (unknown | no_game | not_player, None).
+        """
+        pid = self._player_id(token)
+        if pid is None:
+            return "unknown", None
+        battle = self.battle
+        if battle is None:
+            return "no_game", None
+        if not isinstance(battle, CountBattle):
+            return "not_player", None
+        snap = battle.call(pid, n, self.clock())
         if snap is None:
             return "not_player", None
         snap["me"] = pid

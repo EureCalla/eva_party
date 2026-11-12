@@ -803,7 +803,7 @@
     if (phase === "reveal" && rnd && rnd.ranking) {
       const win = rnd.ranking[0];
       html =
-        '<p class="mg-big mg-win">' + esc(win.name) + " 拿到" + esc(giftName) + "！</p>" +
+        '<p class="mg-big mg-win">' + esc(rnd.winner_name || win.name) + " 拿到" + esc(giftName) + "！</p>" +
         '<ol class="mg-rank">' +
         rnd.ranking
           .map((r) => "<li>" + esc(r.name) + "　🎁" + r.gifts + "　" + (r.alive ? "♥" + r.hp : "淘汰") + "</li>")
@@ -815,7 +815,7 @@
       html =
         n <= 3
           ? '<p class="mg-big">' + n + "</p>"
-          : '<p class="mg-title">' + esc(giftName) + " 爭奪戰" + (mode === "play" ? "" : "（直播）") + "</p>" +
+          : '<p class="mg-title">雪地大亂鬥・' + esc(giftName) + (mode === "play" ? "" : "（直播）") + "</p>" +
             '<ul class="mg-rules">' +
             "<li>用 <b>WASD</b> 或<b>方向鍵</b>移動</li>" +
             "<li>先<b>撿石頭</b>才能攻擊：按住空白鍵蓄力、放開丟</li>" +

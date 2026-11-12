@@ -506,11 +506,14 @@
         // 小遊戲決定的：可展開看排名
         const det = document.createElement("details");
         const sum = document.createElement("summary");
-        sum.textContent = "小遊戲排名";
+        sum.textContent = (r.game_name || "小遊戲") + "排名";
         const ol = document.createElement("ol");
         r.ranking.forEach((p) => {
           const it = document.createElement("li");
-          it.textContent = p.name + "　禮物 " + p.gifts + "　" + (p.alive ? "血 " + p.hp : "淘汰");
+          it.textContent =
+            r.game === "count"
+              ? p.name + "　" + p.score + " 分" + (p.alive ? "" : "　淘汰")
+              : p.name + "　禮物 " + p.gifts + "　" + (p.alive ? "血 " + p.hp : "淘汰");
           ol.appendChild(it);
         });
         det.append(sum, ol);
@@ -579,7 +582,10 @@
     renderContest();
     renderResults();
     const gift = game.round ? order.find((g) => g.gift_id === game.round.gift_id) : null;
-    window.ExMinigame.sync(MG_BRIDGE, game, gift);
+    // 依回合的小遊戲種類只開對應的那一個（另一個收到 null 會自己關掉）
+    const kind = game.round && game.round.game;
+    window.ExMinigame.sync(MG_BRIDGE, kind === "count" ? null : game, gift);
+    window.ExCountgame.sync(MG_BRIDGE, kind === "count" ? game : null, gift);
   }
   const MG_BRIDGE = { api: (path, body) => api(path, body), serverNow: () => serverNow(), tagColor: (l) => tagColor(l), font: FONT };
 

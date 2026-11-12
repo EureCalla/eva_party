@@ -69,7 +69,9 @@
 - API（正式 server 也有）：`GET /api/exchange`、`POST /api/exchange/start`（管理者）、`/api/exchange/join`、`/api/exchange/withdraw`
 - 沙盒測試可縮短倒數：`python sandbox_app.py --round-sec 30`
 
-## 2-4. 小遊戲：丟石頭搶禮物（2026-11-11）
+## 2-4. 小遊戲一：雪地大亂鬥（丟石頭搶禮物，2026-11-11）
+
+> 每次進小遊戲從「雪地大亂鬥」「報數遊戲」隨機抽一種（`cms.MINIGAMES`，回合記在 `exchange_rounds.game_kind`），見 2-5
 
 **時間軸**：倒數 3 分鐘 → 準備 15 秒（前 12 秒看玩法說明、最後 3-2-1）→ 遊戲最多 2 分鐘（120 秒）→ 公布 5 秒 → 聚光燈才換下一份（`GAME_PREP_SEC / GAME_SEC / GAME_REVEAL_SEC`）
 
@@ -106,6 +108,29 @@
 - DB：migration `m007_add_minigame`（`exchange_rounds.game_epoch`、`game_result`；`status` 多 `game`）
 - API：`GET /api/minigame/map`（地圖與移動參數）、`POST /api/minigame/input`、`GET /api/minigame/watch?since=`；`/api/exchange` 的回合多了 `phase`（contest / prep / play / reveal）、`participants`、`play_start / play_end / finished_at / reveal_end / ranking`，`me.in_game`
 
+## 2-5. 小遊戲二：報數遊戲（2026-11-11）
+
+**時間軸**：倒數 3 分鐘 → 準備 15 秒（說明＋3-2-1）→ 遊戲 **1 分鐘**（`COUNT_GAME_SEC`）→ 公布 5 秒
+
+**規則**
+- 按鍵盤 **1～9** 喊數字，從 1 開始照順序喊，9 之後回到 1
+- 同一個數字 **0.4 秒內**兩人都喊（`COLLIDE_SEC`，以伺服器收到的時間判斷）→ **撞號，兩個都淘汰**，先喊的那 1 分收回；之後**接著下一個數字**
+- **喊錯**（例如該喊 1 卻喊 3）→ 淘汰；那一下不算，該喊的數字不變
+- **不能連續喊**：剛喊對的人再按沒反應，畫面提示「等別人喊」
+- 喊對一次 1 分，每個人頭上顯示分數；淘汰只是不能再喊，分數照算
+- 多加 **2 個電腦**（`COUNT_BOTS`，名字「電腦 A／B」）：別人喊完後 0.7～2.6 秒隨機喊，7% 機率喊錯
+- 結束：時間到、能喊的人少於 2 個、或真人全部淘汰
+- **勝負**：全部的人（含淘汰、含電腦）比分數，同分隨機；**禮物只給真人**——電腦第一名時給分數最高的真人（公布畫面會註明）
+- 結果排名（分數、是否淘汰、是否電腦）寫進 `game_result`
+
+**畫面與網路**
+- 所有人（真人＋電腦）排成一排：方塊加眼睛，頭上大字分數，電腦頭上有天線；自己粉紅框；淘汰變灰閉眼並標「淘汰」
+- 中央大框：最後喊對的數字＋誰喊的（撞號時顯示撞號）
+- 喊的人頭上冒「3！」，撞號／喊錯冒粉紅泡泡並閃紅
+- 參賽者：按鍵立刻在自己頭上冒數字，不等伺服器；每 100ms 拿最新狀態（`POST /api/minigame/count {n}`，n=null 為輪詢，回 ok／wait／wrong／collide／ignored／poll）
+- 觀眾：沿用 `GET /api/minigame/watch`，延遲 1.5 秒播放
+- 引擎：`countgame.py` 的 `CountBattle`（只在記憶體，跟雪地大亂鬥同一套懶推進時鐘與回合結算）
+
 ## 3. 待討論
 
 - [x] 抽獎順序怎麼決定 → 隨機，見 2-1
@@ -120,6 +145,7 @@
 
 ## 4. 沙盒驗收用的操作（只在沙盒）
 
+- `python sandbox_app.py --round-sec 30 --game count`：只玩報數遊戲（`--game stones` 只玩雪地大亂鬥，預設 random 隨機）
 - `python sandbox_app.py --round-sec 30 --game-sec 30`：倒數、小遊戲都縮短成 30 秒（機器人代打已拿掉：沒操作的參賽者就站著）
 - 沙盒首頁 `http://localhost:8478/` 會夾帶 `static/sandbox/sandbox_bridge.js`（只有 `sandbox_app.py` 會夾，正式 server 不會）：
   登入後或管理頁切階段時，只要階段是「交換禮物遊戲」，就把登入 token 交給聚光燈頁（sessionStorage，讀完即刪）並自動跳過去
@@ -143,3 +169,4 @@
 - 2026-11-11：拿掉機器人代打（沒操作就站著）；加入黑色怪物：打中一次掉一個禮物、吃石頭補火、噴火攻擊；地上不再生禮物；玩法說明精簡
 - 2026-11-11：小遊戲時間 60 → 120 秒（正式與沙盒預設都改）；聚光燈倒數維持 3 分鐘
 - 2026-11-11：被打中會掉身上的禮物（原主人 10 秒內不能撿）；說明寫明 WASD 或方向鍵都能移動
+- 2026-11-11：新增第二個小遊戲「報數遊戲」（1 分鐘、2 個電腦、撞號／喊錯淘汰、分數最高贏、禮物只給真人）；丟石頭命名「雪地大亂鬥」；每次隨機選一種（沙盒 `--game` 可指定）

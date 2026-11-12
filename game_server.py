@@ -172,6 +172,16 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.send_json(snap)
             else:
                 self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/minigame/count":
+            n = data.get("n")
+            if n is not None and (not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 9):
+                self.send_json({"error": "n 要是 1~9 或 null"}, 400)
+                return
+            result, snap = self.db.minigame_count(self.headers.get("X-Token", ""), n)
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
         elif self.path == "/api/description":
             result = self.db.set_description(self.headers.get("X-Token", ""), str(data.get("description", "")))
             status = {"ok": 200, "unknown": 401, "empty": 400, "too_long": 400, "not_claimed": 409, "locked": 409}

@@ -35,6 +35,11 @@ GAME_SEC: int = 120  # 遊戲時間（2 分鐘）
 GAME_REVEAL_SEC: int = 5  # 公布結果，之後聚光燈才換下一份
 GAME_HP: int = 5  # 每人血量
 
+# 兩種小遊戲，每次進小遊戲隨機抽一種（沙盒可用 --game 指定）
+MINIGAMES: dict[str, str] = {"stones": "雪地大亂鬥", "count": "報數遊戲"}
+COUNT_GAME_SEC: int = 60  # 報數遊戲時間（1 分鐘）
+COUNT_BOTS: int = 2  # 報數遊戲多加的電腦玩家
+
 # 沙盒：設計新階段畫面用，與正式 server／正式 DB 完全分開，驗收後才合併
 # sandbox.db 由 tools/build_sandbox_db.py 從正式 DB 唯讀複製產生，不進版控（.gitignore 的 *.db）
 SANDBOX_DIR: Path = ROOT_DIR / "sandbox"
