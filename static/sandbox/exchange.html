@@ -63,6 +63,15 @@
         <div id="cg-live" class="mg-live" hidden>直播（延遲約 1.5 秒）</div>
         <div id="cg-center" class="mg-center" hidden></div>
       </div>
+      <!-- 往上跳跳樂：一層一層往上跳，掉出畫面淘汰 -->
+      <div id="jg" class="mg" hidden>
+        <canvas id="jg-canvas" width="1280" height="760"></canvas>
+        <div id="jg-timer" class="mg-timer"></div>
+        <div id="jg-hud" class="mg-hud" hidden></div>
+        <ol id="jg-board" class="mg-board"></ol>
+        <div id="jg-live" class="mg-live" hidden>直播（延遲約 1.5 秒）</div>
+        <div id="jg-center" class="mg-center" hidden></div>
+      </div>
       <!-- 轉盤：進小遊戲前轉 3 秒，轉完才知道這局玩什麼 -->
       <div id="wheel" class="mg" hidden>
         <canvas id="wheel-canvas" width="1280" height="760"></canvas>
@@ -114,6 +123,7 @@
   <script src="../sprites.js"></script>
   <script src="minigame.js"></script>
   <script src="countgame.js"></script>
+  <script src="climbgame.js"></script>
   <script src="wheel.js"></script>
   <script src="exchange.js"></script>
 </body>

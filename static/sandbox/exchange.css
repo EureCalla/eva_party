@@ -234,6 +234,7 @@
 .mg { position: absolute; inset: 0; line-height: 1.4; }
 #mg-canvas,
 #cg-canvas,
+#jg-canvas,
 #wheel-canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 .mg-timer {
   position: absolute;

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import mpivr20_cms as cms
+from climbgame import ClimbBattle
 from countgame import CountBattle
 from minigame import StoneBattle
 from migrations import (
@@ -109,10 +110,11 @@ class GameDB:
         self.game_hp: int = cms.GAME_HP
         self.count_game_sec: float = cms.COUNT_GAME_SEC
         self.count_bots: int = cms.COUNT_BOTS
-        self.game_mode: str = "random"  # 小遊戲種類：random（隨機）／stones／count；沙盒可指定
+        self.climb_game_sec: float = cms.CLIMB_GAME_SEC
+        self.game_mode: str = "random"  # 小遊戲種類：random（隨機）／stones／count／climb；沙盒可指定
         self.spin_sec: float = cms.SPIN_SEC
-        self.battle: StoneBattle | CountBattle | None = None  # 進行中的小遊戲（只在記憶體）
-        self.battle_kind: str | None = None  # stones / count
+        self.battle: StoneBattle | CountBattle | ClimbBattle | None = None  # 進行中的小遊戲（只在記憶體）
+        self.battle_kind: str | None = None  # stones / count / climb
         self.battle_spin_end: float = 0.0  # 轉盤轉完的時間；之前不公開遊戲種類
         self.battle_round_id: int | None = None
         self._token_ids: dict[str, int] = {}  # 小遊戲每秒很多次請求，token→player id 快取免得一直查 DB
@@ -741,6 +743,8 @@ class GameDB:
         prep_epoch = game_epoch + self.spin_sec  # 先轉盤，再進準備
         if kind == "count":
             self.battle = CountBattle(players, prep_epoch, self.game_prep_sec, self.count_game_sec, self.count_bots)
+        elif kind == "climb":
+            self.battle = ClimbBattle(players, prep_epoch, self.game_prep_sec, self.climb_game_sec)
         else:
             self.battle = StoneBattle(players, prep_epoch, self.game_prep_sec, self.game_sec, self.game_hp)
         self.battle_kind = kind
@@ -1122,6 +1126,25 @@ class GameDB:
         if not isinstance(battle, CountBattle):
             return "not_player", None
         snap = battle.call(pid, n, self.clock())
+        if snap is None:
+            return "not_player", None
+        snap["me"] = pid
+        return "ok", snap
+
+    def minigame_climb(
+        self, token: str, x: float, y: float, vy: float, grounded: bool, face: int, move: int,
+        seq: int | None = None, have: int = 0, kick_ack: int = 0, land: tuple[float, float] | None = None,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Report a climbing-game player's own position; returns (ok, live snapshot) / (unknown|no_game|not_player, None)."""
+        pid = self._player_id(token)
+        if pid is None:
+            return "unknown", None
+        battle = self.battle
+        if battle is None or self.clock() < self.battle_spin_end:
+            return "no_game", None
+        if not isinstance(battle, ClimbBattle):
+            return "not_player", None
+        snap = battle.report(pid, x, y, vy, grounded, face, move, self.clock(), seq, have, kick_ack, land)
         if snap is None:
             return "not_player", None
         snap["me"] = pid

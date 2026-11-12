@@ -7,7 +7,7 @@
   const LAND_SEC = 1.1; // 拿到結果後減速停下的時間
   const SHOW_SEC = 1.4; // 停下後顯示結果多久
   const POLL_MS = 300; // 轉盤中問結果的間隔
-  const SLICES = 8; // 格子數（遊戲名稱輪流排）
+  const SLICES = 9; // 格子數（遊戲名稱輪流排，三款各 3 格）
   const COLORS = ["#F6B7C8", "#BFDDF5", "#FFE7A3", "#CDEBD8", "#E3D5F5", "#FFD1B0"];
   const W = 1280;
   const H = 760;

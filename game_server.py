@@ -182,6 +182,23 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.send_json(snap)
             else:
                 self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/minigame/climb":
+            try:
+                x, y, vy = float(data.get("x")), float(data.get("y")), float(data.get("vy", 0))
+                face, move = int(data.get("face", 1)), int(data.get("move", 0))
+                seq = None if data.get("seq") is None else int(data.get("seq"))
+                have, kick_ack = int(data.get("have", 0)), int(data.get("kick_ack", 0))
+                land = None if data.get("land") is None else (float(data["land"][0]), float(data["land"][1]))
+            except (TypeError, ValueError, IndexError, KeyError):
+                self.send_json({"error": "x / y / vy / face / move / seq / have / kick_ack / land 格式不對"}, 400)
+                return
+            result, snap = self.db.minigame_climb(
+                self.headers.get("X-Token", ""), x, y, vy, bool(data.get("grounded")), face, move, seq, have, kick_ack, land
+            )
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
         elif self.path == "/api/description":
             result = self.db.set_description(self.headers.get("X-Token", ""), str(data.get("description", "")))
             status = {"ok": 200, "unknown": 401, "empty": 400, "too_long": 400, "not_claimed": 409, "locked": 409}
