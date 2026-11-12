@@ -218,7 +218,8 @@
           ctx.translate(-EL_HEAD[0], -EL_HEAD[1]);
           piece("el_head_" + (st.face || "open"), 0);
           piece("el_ear", st.ear || 0);
-          piece("el_trunk", -2.5);
+          // 象鼻舉高（-2.5 rad）；第六集撿到小雞的蛋殼就頂在鼻尖上（鼻尖相對於關節 4.5,19，轉回正）
+          piece("el_trunk", -2.5, st.shell ? { after: () => piece("egg6_bottom", 2.5, { ax: 4.5, ay: 19, scale: 1.2 * (1 + pop(st.t || 0, st.shell, 0.3, 0.4)) }) } : undefined);
           ctx.restore();
         },
         sq: (st) => {
@@ -568,6 +569,14 @@
           if (kd === "sd") st.face = "sad";
           old[kd] = st;
         });
+        // 大象經過蛋的位置時用鼻子把小雞留下的下半片蛋殼撿起來，一路頂在鼻尖上
+        const elf = paradeFoot("el", t);
+        const SHELL_PICK = START.el + (EGG_X - 26 - HOME.el) / V;
+        const shellTaken = elf !== null && t >= SHELL_PICK;
+        if (shellTaken) {
+          old.el.shell = SHELL_PICK;
+          old.el.t = t;
+        }
         // 蛇：捲成一圈滾著走
         const sn = { x: HOME.sn + off, face: "open", headRot: Math.sin(t * 2.4) * 0.08 };
         const snf = paradeFoot("sn", t);
@@ -747,7 +756,7 @@
           // 小雞站在下半蛋殼裡（蛋殼畫在前面），出發時才走出來
           drawAnimal(pg);
           drawAnimal(ck);
-          piece("egg6_bottom", 0, { ax: EGG_X, ay: GROUND, scale: 1.3 });
+          if (!shellTaken) piece("egg6_bottom", 0, { ax: EGG_X, ay: GROUND, scale: 1.3 });
         }
         if (t >= HATCH && t < HATCH + 0.5) {
           // 上半蛋殼彈到半空，再落到小雞頭上（之後由小雞的頭帶著）
@@ -792,6 +801,11 @@
             const a = -Math.PI * 0.1 - i * 0.7;
             piece("dust", 0, { ax: OW_X + Math.cos(a) * u * 9, ay: OW_Y - 8 + Math.sin(a) * u * 7, scale: 0.35 * (1 - u) });
           }
+        }
+        // 大象撿起蛋殼的瞬間閃一下
+        if (shellTaken && t < SHELL_PICK + 0.5) {
+          const u = (t - SHELL_PICK) / 0.5;
+          piece("sparkle", 0, { ax: EGG_X, ay: GROUND - 8 - u * 10, scale: Math.sin(u * Math.PI) * 1.6 });
         }
         // 小雞孵出來：冒愛心
         if (t >= HATCH + 0.6 && t < HATCH + 2.0) {

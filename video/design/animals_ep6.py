@@ -158,7 +158,11 @@ def crane_neck(kind):
     m.stroke([(26.6, 6.6), (31.4, 7.8)], 0.9, 0.6)    # 長嘴
     g = m.outlined("0")
     paint(g, lambda x, y: x >= 23 and y <= 8 and x <= 27, "w", "0")
-    paint(g, lambda x, y: y <= 4 and 23 <= x <= 26, "?", "0w")     # 頭頂一點紅
+    top = min(y for y in range(len(g)) if any(g[y][x] != "." for x in range(23, 28)))
+    for y in range(top, top + 3):    # 丹頂鶴：頭頂一塊醒目的紅（連描邊一起塗紅，從遠處也看得到）
+        for x in range(23, 28):
+            if g[y][x] != ".":
+                g[y][x] = "?"
     paint(g, lambda x, y: x >= 28, "J", "0w")
     for x in range(28, 32):
         for y in range(6, 10):
