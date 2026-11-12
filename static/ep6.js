@@ -299,12 +299,11 @@
           piece("pg_flipper", st.flap || 0.15);
         },
         cr: (st) => {
-          piece("cr_leg_back_far", -(st.leg || 0));
-          piece("cr_leg_front_far", st.leg || 0);
+          // 鳥只有兩隻腳：遠側那隻畫在身體後面，兩隻反向擺動
+          piece("cr_leg_far", -(st.leg || 0));
           piece("cr_body", 0);
           piece("cr_wing", st.flap || 0);
-          piece("cr_leg_back", st.leg || 0);
-          piece("cr_leg_front", -(st.leg || 0));
+          piece("cr_leg", st.leg || 0);
           piece("cr_neck_" + (st.face || "open"), st.headRot || 0);
         },
         ow: (st) => {

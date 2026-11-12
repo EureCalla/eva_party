@@ -138,9 +138,10 @@ def crane_body():
     return crop(g, (14, 31))
 
 
-def crane_leg(front, far):
+def crane_leg(far):
+    """鳥只有兩隻腳：近側（淺灰）與遠側（深灰），都長在身體正中間下方。"""
     m = Mask(*CRANE)
-    x = 16 if front else 12
+    x = 12 if far else 15
     m.box(x, 31, x + 1, 47)
     m.box(x, 48, x + 3, 49)          # 腳趾
     g = m.outlined("q" if far else "v")
@@ -286,9 +287,8 @@ def pieces():
     out["pg_flipper"] = penguin_flipper()
     out["cr_body"] = crane_body()
     out["cr_wing"] = crane_wing()
-    for front in (False, True):
-        for far in (False, True):
-            out["cr_leg_" + ("front" if front else "back") + ("_far" if far else "")] = crane_leg(front, far)
+    out["cr_leg"] = crane_leg(False)
+    out["cr_leg_far"] = crane_leg(True)
     out["ow_body"] = owl_body()
     out["ow_wing"] = owl_wing(False)
     out["ow_wing_spread"] = owl_wing(True)
