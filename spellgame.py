@@ -52,6 +52,7 @@ class SpellBattle:
             p["id"]: {
                 "id": p["id"], "hp": HP, "alive": True, "out_at": None,
                 "word": -1, "progress": 0, "started": None, "casts": 0, "last_speed": None,
+                "typed": 0,  # 按鍵流水號：已經處理到第幾個按鍵（重送的跳過）
             }
             for p in players
         }
@@ -176,12 +177,18 @@ class SpellBattle:
 
     # ---------- 打字與詠唱 ----------
 
-    def type(self, pid: int, word_id: int | None, keys: str, now: float) -> dict[str, Any] | None:
+    def type(
+        self, pid: int, word_id: int | None, keys: str, now: float, start: int | None = None,
+    ) -> dict[str, Any] | None:
         """A player typed ``keys`` for set ``word_id`` (or just polls with ""); returns the live snapshot.
 
-        The snapshot carries ``results`` (one of ok / wrong / cast per key, or
-        ignored). Keys for an older set are ignored without penalty. Returns
-        None when ``pid`` is not in this match.
+        ``start`` is the sequence number of the first key (the page numbers
+        every key it sends). Keys this player already sent are skipped as
+        ``dup``, so a request retried after a network hiccup is never judged
+        twice. The snapshot carries ``results`` (one of ok / wrong / cast /
+        dup / ignored per key) and ``typed`` (how many keys have been handled).
+        Keys for an older set are ignored without penalty. Returns None when
+        ``pid`` is not in this match.
         """
         with self.lock:
             self._advance(now)
@@ -189,9 +196,14 @@ class SpellBattle:
             if p is None:
                 return None
             results: list[str] = []
+            if keys and start is not None:
+                dup = min(len(keys), max(0, p["typed"] - start))
+                results = ["dup"] * dup
+                keys = keys[dup:]
+                p["typed"] = max(p["typed"], start + dup + len(keys))
             n = self.word_index(now)
             if keys and (self.phase(now) != "play" or not p["alive"] or n is None or word_id != n):
-                results = ["ignored"] * len(keys)
+                results += ["ignored"] * len(keys)
             elif keys:
                 self._sync_word(p, n)
                 for ch in keys:
@@ -201,6 +213,7 @@ class SpellBattle:
                     results.append(self._key(p, n, ch, now))
             snap = self._snapshot(now)
             snap["results"] = results
+            snap["typed"] = p["typed"]
             return snap
 
     def _sync_word(self, p: dict[str, Any], n: int) -> None:

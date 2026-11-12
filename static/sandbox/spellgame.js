@@ -39,9 +39,15 @@
   let watchSince = 0;
   let timers = [];
   let offset = null; // 伺服器時間 − 本機時間
-  let inFlight = 0;
-  let queue = ""; // 還沒送出的按鍵
-  let pending = ""; // 已送出、伺服器還沒回的按鍵（本機先標示）
+  let keyBusy = false; // 帶按鍵的請求一次只送一個，伺服器收到的順序才不會顛倒
+  let pollBusy = false;
+  let kseq = 0; // 按鍵流水號（下一個按鍵的編號）
+  let queue = []; // 還沒送出的按鍵 { i, ch, w }（w＝按下時的字母組）
+  let sent = []; // 送出中、還沒回來的按鍵
+  let latestTyped = 0; // latest 這份畫面是伺服器處理到第幾個按鍵時的狀態
+  let lastWordId = null; // 換新字組時閃一下
+  let wordFlashUntil = 0;
+  let imeUntil = 0; // 偵測到中文輸入法時，狀態列提示幾秒
   let effects = [];
   let shakeUntil = 0;
   const seen = new Set(); // 已經跳過特效的事件
@@ -67,7 +73,12 @@
     events.clear();
     watchSince = 0;
     offset = null;
-    queue = pending = "";
+    keyBusy = pollBusy = false;
+    kseq = latestTyped = 0;
+    queue = [];
+    sent = [];
+    lastWordId = null;
+    wordFlashUntil = imeUntil = 0;
     lastMs = null;
     box.hidden = true;
   }
@@ -75,8 +86,8 @@
   function startPlay() {
     mode = "play";
     timers.forEach(clearInterval);
-    timers = [setInterval(send, POLL_MS)];
-    send();
+    timers = [setInterval(pump, POLL_MS)];
+    pump();
     liveEl.hidden = true;
   }
 
@@ -119,35 +130,62 @@
     return f && f.word ? { id: f.word[0], letters: f.word[1], at: f.word[2] } : null;
   }
 
-  async function send() {
+  function pump() {
     if (mode !== "play") return;
-    const keys = queue;
-    if (inFlight >= (keys ? 2 : 1)) return; // 有按鍵可以插隊一次
-    const w = currentWord();
-    queue = "";
-    pending += keys;
-    inFlight++;
+    if (queue.length && !keyBusy) sendKeys();
+    else if (!keyBusy && !pollBusy) poll();
+  }
+
+  async function sendKeys() {
+    const w = queue[0].w;
+    let n = 0;
+    while (n < queue.length && n < 20 && queue[n].w === w) n++;
+    const batch = queue.splice(0, n);
+    keyBusy = true;
+    sent = batch;
     try {
-      const r = await bridge.api("/api/minigame/spell", { word: w ? w.id : null, keys });
+      const r = await bridge.api("/api/minigame/spell", { word: w, keys: batch.map((k) => k.ch).join(""), from: batch[0].i });
       if (!r.ok) {
         if (r.status === 409 && mode === "play") startWatch();
         return;
       }
-      take(r.data, keys);
+      take(r.data);
     } catch (e) {
-      /* 網路抖一下，下一輪再拿 */
+      queue = batch.concat(queue); // 網路抖一下：照原編號重送，伺服器會跳過已經處理過的
     } finally {
-      pending = pending.slice(keys.length);
-      inFlight--;
+      sent = [];
+      keyBusy = false;
+      if (queue.length) pump(); // 排隊中的按鍵馬上接著送
     }
   }
 
-  function take(s, keys) {
+  async function poll() {
+    pollBusy = true;
+    try {
+      const r = await bridge.api("/api/minigame/spell", { word: null, keys: "" });
+      if (!r.ok) {
+        if (r.status === 409 && mode === "play") startWatch();
+        return;
+      }
+      take(r.data);
+    } catch (e) {
+      /* 網路抖一下，下一輪再拿 */
+    } finally {
+      pollBusy = false;
+    }
+  }
+
+  function take(s) {
     meta = s;
     meId = s.me;
     roster = s.roster;
     noteOffset(s.now);
-    if (!latest || s.frame.t >= latest.t || keys) latest = s.frame;
+    // 只採用比較新的回應：伺服器時間比較晚、處理過的按鍵也不比較少（舊回應晚到不會把進度蓋回去）
+    const typed = s.typed || 0;
+    if (!latest || (s.frame.t >= latest.t && typed >= latestTyped)) {
+      latest = s.frame;
+      latestTyped = typed;
+    }
     collect(s.frame);
     (s.results || []).forEach((res) => {
       const me = posOf(meId);
@@ -167,12 +205,17 @@
   }
   window.addEventListener("keydown", (e) => {
     if (mode !== "play" || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
-    const ch = (e.key || "").toLowerCase();
-    if (ch.length !== 1 || ch < "a" || ch > "z") return;
+    const m = /^Key([A-Z])$/.exec(e.code || "");
+    if (!m) return;
     e.preventDefault();
+    if (e.repeat) return; // 按住不放的自動連發不算
+    // 中文輸入法：e.key 會是 "Process" 或全形字，照實體按鍵當英文，並提示玩家不用切換
+    if (e.key === "Process" || e.isComposing || !/^[a-zA-Z]$/.test(e.key || "")) imeUntil = localSec() + 3;
     if (!meta || clock() < meta.play_start || meta.finished_at) return;
-    queue += ch;
-    send();
+    const w = currentWord();
+    if (!w) return;
+    queue.push({ i: kseq++, ch: m[1].toLowerCase(), w: w.id });
+    pump();
   });
 
   // 本機看到的進度：伺服器的進度＋還沒回來的按鍵（照同樣規則先推算）
@@ -181,10 +224,11 @@
     if (!w || !latest) return 0;
     const row = latest.p.find((p) => p[0] === meId);
     let prog = row ? row[3] : 0;
-    for (const ch of pending + queue) {
-      if (ch === w.letters[prog]) prog = prog + 1 >= w.letters.length ? 0 : prog + 1;
+    sent.concat(queue).forEach((k) => {
+      if (k.i < latestTyped || k.w !== w.id) return; // 伺服器已經算進去的、或別組的不重算
+      if (k.ch === w.letters[prog]) prog = prog + 1 >= w.letters.length ? 0 : prog + 1;
       else prog = 0;
-    }
+    });
     return prog;
   }
 
@@ -336,13 +380,18 @@
     const w = currentWord();
     if (!w || !meta) return;
     const prog = mode === "play" ? myProgress() : 0;
+    if (w.id !== lastWordId) {
+      if (lastWordId !== null) wordFlashUntil = localSec() + 0.45;
+      lastWordId = w.id;
+    }
+    const flash = localSec() < wordFlashUntil && Math.floor(localSec() * 10) % 2 === 0;
     const size = 74;
     const gap = 10;
     const x0 = CX - (5 * size + 4 * gap) / 2;
     for (let i = 0; i < w.letters.length; i++) {
       const x = x0 + i * (size + gap);
-      R(x - 3, CY - 70 - 3, size + 6, size + 6, "#2A1A10");
-      R(x, CY - 70, size, size, i < prog ? "#F6B7C8" : "#FFF6EA");
+      R(x - 3, CY - 70 - 3, size + 6, size + 6, flash ? "#5B98D6" : "#2A1A10");
+      R(x, CY - 70, size, size, flash ? "#FFD86B" : i < prog ? "#F6B7C8" : "#FFF6EA");
       text(w.letters[i], x + size / 2, CY - 70 + size / 2 - 2, 56, i < prog ? "#DE6A93" : "#2A1A10");
       if (i === prog && mode === "play") R(x + 12, CY - 70 + size - 12, size - 24, 5, "#5B98D6");
     }
@@ -462,7 +511,9 @@
     let hud = "";
     if (mode === "play" && latest) {
       const mine = latest.p.find((p) => p[0] === meId);
-      hud = mine && !mine[2] ? "你被淘汰了" : "打出中間的字母（打完可以再打一次）";
+      if (mine && !mine[2]) hud = "你被淘汰了";
+      else if (localSec() < imeUntil) hud = "偵測到中文輸入法，已自動當成英文按鍵（不用切換）";
+      else hud = "打出中間的字母（打完可以再打一次）";
     }
     hudEl.textContent = hud;
     hudEl.hidden = !hud;

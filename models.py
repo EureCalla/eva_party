@@ -1158,7 +1158,9 @@ class GameDB:
         snap["me"] = pid
         return "ok", snap
 
-    def minigame_spell(self, token: str, word_id: int | None, keys: str) -> tuple[str, dict[str, Any] | None]:
+    def minigame_spell(
+        self, token: str, word_id: int | None, keys: str, start: int | None = None,
+    ) -> tuple[str, dict[str, Any] | None]:
         """Type letters in the typing-spell game (or poll with ""); returns (ok, snapshot with results).
 
         Errors: (unknown | no_game | not_player, None).
@@ -1171,7 +1173,7 @@ class GameDB:
             return "no_game", None
         if not isinstance(battle, SpellBattle):
             return "not_player", None
-        snap = battle.type(pid, word_id, keys, self.clock())
+        snap = battle.type(pid, word_id, keys, self.clock(), start)
         if snap is None:
             return "not_player", None
         snap["me"] = pid
