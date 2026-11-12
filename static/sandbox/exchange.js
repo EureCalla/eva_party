@@ -512,6 +512,9 @@
           ? p.name + "　" + p.score + " 分" + (p.alive ? "" : "　淘汰")
           : gameKind === "climb"
           ? p.name + "　" + p.floor + " 樓" + (p.alive ? "" : "　淘汰")
+          : gameKind === "spell"
+          ? p.name + "　血 " + p.hp + (p.speed !== null && p.speed !== undefined ? "　最後詠唱 " + p.speed.toFixed(2) + " 秒" : "") +
+            (p.alive ? "" : "　淘汰")
           : p.name + "　禮物 " + p.gifts + "　" + (p.alive ? "血 " + p.hp : "淘汰");
       ol.appendChild(it);
     });
@@ -636,6 +639,7 @@
     window.ExMinigame.sync(MG_BRIDGE, kind === "stones" ? game : null, gift);
     window.ExCountgame.sync(MG_BRIDGE, kind === "count" ? game : null, gift);
     window.ExClimbgame.sync(MG_BRIDGE, kind === "climb" ? game : null, gift);
+    window.ExSpellgame.sync(MG_BRIDGE, kind === "spell" ? game : null, gift);
     window.ExWheel.sync(MG_BRIDGE, game);
   }
   const MG_BRIDGE = { api: (path, body) => api(path, body), serverNow: () => serverNow(), tagColor: (l) => tagColor(l), font: FONT };

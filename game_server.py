@@ -182,6 +182,19 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.send_json(snap)
             else:
                 self.send_json({"result": result}, 401 if result == "unknown" else 409)
+        elif self.path == "/api/minigame/spell":
+            word, keys = data.get("word"), data.get("keys", "")
+            if word is not None and (not isinstance(word, int) or isinstance(word, bool)):
+                self.send_json({"error": "word 要是整數或 null"}, 400)
+                return
+            if not isinstance(keys, str) or len(keys) > 20 or any(c not in "abcdefghijklmnopqrstuvwxyz" for c in keys):
+                self.send_json({"error": "keys 只能是 a～z，最多 20 個字"}, 400)
+                return
+            result, snap = self.db.minigame_spell(self.headers.get("X-Token", ""), word, keys)
+            if snap is not None:
+                self.send_json(snap)
+            else:
+                self.send_json({"result": result}, 401 if result == "unknown" else 409)
         elif self.path == "/api/minigame/climb":
             try:
                 x, y, vy = float(data.get("x")), float(data.get("y")), float(data.get("vy", 0))
