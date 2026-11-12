@@ -297,7 +297,7 @@ SQUID = (16, 20)
 
 
 def squid(face, grilled=True):
-    """face：back（背面，看不到臉）／open／happy／scared。烤過的有烤痕。"""
+    """face：back（背面，看不到臉）／open／happy／scared／sad。烤過的有烤痕。"""
     m = Mask(*SQUID)
     m.stroke([(8, 12), (8, 2.4)], 4.4, 2.4)          # 身體（外套膜）
     m.disk(8, 1.6, 1.6, 1.4)                         # 尖頭
@@ -320,12 +320,17 @@ def squid(face, grilled=True):
     elif face == "happy":
         for x0 in (4, 10):
             stamp(g, x0 - 1, 12, [".k.", "k.k"])
+    elif face == "sad":     # 憂鬱：眼尾下垂、嘴角往下、沒有腮紅（第六集金幣被狐狸搶回去）
+        stamp(g, 3, 12, ["kk.", "..k"])
+        stamp(g, 10, 12, [".kk", "k.."])
+        stamp(g, 6, 16, [".kk.", "k..k"])
     else:   # scared：瞪大的白眼
         for x0 in (3, 9):
             stamp(g, x0, 11, ["oooo", "ohko", "oooo"])
-    stamp(g, 7, 15, ["nn"] if face != "scared" else ["kk"])
-    stamp(g, 3, 14, ["b"])
-    stamp(g, 12, 14, ["b"])
+    if face != "sad":
+        stamp(g, 7, 15, ["nn"] if face != "scared" else ["kk"])
+        stamp(g, 3, 14, ["b"])
+        stamp(g, 12, 14, ["b"])
     return crop(g, (8, 10))
 
 
@@ -389,7 +394,7 @@ def pieces():
     out["fx_arm"] = fox_arm()
     out["yn_body"] = shihtzu_body()
     out["dg_body"] = dog_body()
-    for face in ("back", "open", "happy", "scared"):
+    for face in ("back", "open", "happy", "scared", "sad"):
         out["sd_" + face] = squid(face)
     out["tongs"] = grid(TONGS, (0, 1))
     out["fan"] = grid(FAN, (2.5, 6))
