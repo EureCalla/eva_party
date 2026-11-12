@@ -583,9 +583,11 @@
     renderResults();
     const gift = game.round ? order.find((g) => g.gift_id === game.round.gift_id) : null;
     // 依回合的小遊戲種類只開對應的那一個（另一個收到 null 會自己關掉）
+    // 轉盤中還沒有種類，兩個都不開
     const kind = game.round && game.round.game;
-    window.ExMinigame.sync(MG_BRIDGE, kind === "count" ? null : game, gift);
+    window.ExMinigame.sync(MG_BRIDGE, kind === "stones" ? game : null, gift);
     window.ExCountgame.sync(MG_BRIDGE, kind === "count" ? game : null, gift);
+    window.ExWheel.sync(MG_BRIDGE, game);
   }
   const MG_BRIDGE = { api: (path, body) => api(path, body), serverNow: () => serverNow(), tagColor: (l) => tagColor(l), font: FONT };
 

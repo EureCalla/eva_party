@@ -39,6 +39,7 @@ GAME_HP: int = 5  # 每人血量
 MINIGAMES: dict[str, str] = {"stones": "雪地大亂鬥", "count": "報數遊戲"}
 COUNT_GAME_SEC: int = 60  # 報數遊戲時間（1 分鐘）
 COUNT_BOTS: int = 2  # 報數遊戲多加的電腦玩家
+SPIN_SEC: int = 3  # 進小遊戲前的轉盤秒數；轉完才公開這局玩哪一種
 
 # 沙盒：設計新階段畫面用，與正式 server／正式 DB 完全分開，驗收後才合併
 # sandbox.db 由 tools/build_sandbox_db.py 從正式 DB 唯讀複製產生，不進版控（.gitignore 的 *.db）

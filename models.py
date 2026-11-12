@@ -108,8 +108,10 @@ class GameDB:
         self.count_game_sec: float = cms.COUNT_GAME_SEC
         self.count_bots: int = cms.COUNT_BOTS
         self.game_mode: str = "random"  # 小遊戲種類：random（隨機）／stones／count；沙盒可指定
+        self.spin_sec: float = cms.SPIN_SEC
         self.battle: StoneBattle | CountBattle | None = None  # 進行中的小遊戲（只在記憶體）
         self.battle_kind: str | None = None  # stones / count
+        self.battle_spin_end: float = 0.0  # 轉盤轉完的時間；之前不公開遊戲種類
         self.battle_round_id: int | None = None
         self._token_ids: dict[str, int] = {}  # 小遊戲每秒很多次請求，token→player id 快取免得一直查 DB
         print(f"[models] DB ready: {db_path}")
@@ -674,11 +676,13 @@ class GameDB:
         }
         players = [{"id": pid, "name": rows[pid]["en_name"], "label": rows[pid]["label"]} for pid in pool if pid in rows]
         kind = self.game_mode if self.game_mode in cms.MINIGAMES else secrets.SystemRandom().choice(list(cms.MINIGAMES))
+        prep_epoch = game_epoch + self.spin_sec  # 先轉盤，再進準備
         if kind == "count":
-            self.battle = CountBattle(players, game_epoch, self.game_prep_sec, self.count_game_sec, self.count_bots)
+            self.battle = CountBattle(players, prep_epoch, self.game_prep_sec, self.count_game_sec, self.count_bots)
         else:
-            self.battle = StoneBattle(players, game_epoch, self.game_prep_sec, self.game_sec, self.game_hp)
+            self.battle = StoneBattle(players, prep_epoch, self.game_prep_sec, self.game_sec, self.game_hp)
         self.battle_kind = kind
+        self.battle_spin_end = prep_epoch
         self.battle_round_id = round_id
         self.conn.execute("UPDATE exchange_rounds SET game_kind = ? WHERE id = ?", (kind, round_id))
         self.conn.commit()
@@ -863,7 +867,14 @@ class GameDB:
                     "phase": "contest",
                 }
                 battle = self._battle_for(rnd) if in_game else None
-                if battle is not None:
+                if battle is not None and now < self.battle_spin_end:
+                    # 轉盤中：大家都還不知道這局玩什麼（不送遊戲種類）
+                    round_info.update({
+                        "phase": "spin",
+                        "participants": [names.get(pid) for pid in pool],
+                        "spin_end": self.battle_spin_end,
+                    })
+                elif battle is not None:
                     phase = battle.phase(now)
                     round_info.update({
                         "phase": "reveal" if phase == "over" else phase,
@@ -926,6 +937,7 @@ class GameDB:
                 "round": round_info,
                 "results": results,
                 "me": me,
+                "minigames": [{"key": k, "name": n} for k, n in cms.MINIGAMES.items()],  # 轉盤上的格子
             }
 
     # ---------- 小遊戲：玩家操作（即時）與觀眾直播（延遲） ----------
@@ -950,7 +962,7 @@ class GameDB:
         if pid is None:
             return "unknown", None
         battle = self.battle
-        if battle is None:
+        if battle is None or self.clock() < self.battle_spin_end:
             return "no_game", None
         if not isinstance(battle, StoneBattle):
             return "not_player", None
@@ -969,7 +981,7 @@ class GameDB:
         if pid is None:
             return "unknown", None
         battle = self.battle
-        if battle is None:
+        if battle is None or self.clock() < self.battle_spin_end:
             return "no_game", None
         if not isinstance(battle, CountBattle):
             return "not_player", None
@@ -982,6 +994,6 @@ class GameDB:
     def minigame_watch(self, since: float) -> tuple[str, dict[str, Any] | None]:
         """Return buffered live frames newer than ``since`` for spectators; (no_game, None) when no game runs."""
         battle = self.battle
-        if battle is None:
+        if battle is None or self.clock() < self.battle_spin_end:
             return "no_game", None
         return "ok", battle.watch(self.clock(), since)

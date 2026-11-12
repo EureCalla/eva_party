@@ -233,7 +233,8 @@
 /* 小遊戲：蓋在聚光燈舞台上，大小跟舞台一樣 */
 .mg { position: absolute; inset: 0; line-height: 1.4; }
 #mg-canvas,
-#cg-canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+#cg-canvas,
+#wheel-canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 .mg-timer {
   position: absolute;
   top: 2%;
