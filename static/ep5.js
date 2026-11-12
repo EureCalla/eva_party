@@ -8,7 +8,8 @@
       // → 特寫：狐狸用夾子把魷魚翻面，看到魷魚的臉 → 小貓帶前四集的朋友走進來（後遺症照舊：山羊頭卡在羊毛裡、
       // 獅子爆炸頭、棕熊腫包、矮袋鼠絆倒、蛇滾著走）→ 發名牌給狐狸、芝麻狗、西施犬，魷魚趁亂躲到攤位底下
       // → 遊行經過攤位時小貓偷偷把名牌塞給魷魚 → 大家走遠了，魷魚才衝出來追上去
-      const DUR = 37;
+      // 芝麻狗開場就把金幣拋到桌上付錢，結果大家（連狐狸）都忘了拿，最後被魷魚叼走
+      const DUR = 38;
       const P = 15; // 一格 = 15 px
       const GW = 352; // 世界比畫面寬快兩倍，鏡頭橫移（角色多、又有放大兩倍的動物）
       const GH = 72;
@@ -440,6 +441,19 @@
       const lastPass = START.gf + (STALL_X + 60 - FOOT0.gf) / V;
       const SQ_GO = (lastPass > P0 ? lastPass + PAUSE : lastPass) + 0.5;
       const SQ_V = V * 1.6;
+      // 芝麻狗付的金幣：開場從嘴裡拋到桌上，一直放到最後被魷魚拿走
+      const COIN_X = STALL_X - 14;
+      const COIN_THROW = 1.3;
+      const COIN_FLY = 0.6;
+      // 魷魚出來後的路線：從攤位底下鑽出來 → 跳上桌叼走金幣 → 跳下來舉著金幣衝出去
+      function squidRun(r) {
+        if (r < 0.3) return { x: HIDE_X, y: GROUND, coin: false };
+        if (r < 0.75) {
+          return { x: tw(r, 0.3, 0.75, HIDE_X, COIN_X + 3, "lin"), y: path(r, [[0.3, GROUND], [0.55, TOP - 8, "out"], [0.75, TOP, "in"]]), coin: false };
+        }
+        if (r < 1.0) return { x: COIN_X + 3, y: TOP, coin: r >= 0.85 };
+        return { x: COIN_X + 3 + SQ_V * (r - 1.0), y: path(r, [[1.0, TOP], [1.15, TOP - 5, "out"], [1.4, GROUND, "in"]]), coin: true };
+      }
       const TAG_SQ = P0 + 0.55; // 名牌從小貓手上塞到攤位底下
       const TAG_SQ_HIT = TAG_SQ + 0.45;
 
@@ -494,7 +508,7 @@
         const cam = { x: path(t, camKeys.x), y: path(t, camKeys.y), z: path(t, camKeys.z) };
         const catFoot = t < GO ? CAT_FOOT : CAT_FOOT + V * (pc(t) - GO);
         if (t >= GO) cam.x = tw(t, GO, GO + 0.8, 150, Math.min(STALL_X + 8, Math.max(150, catFoot + 20)), "io");
-        if (t >= SQ_GO) cam.x = Math.max(STALL_X + 8, HIDE_X + SQ_V * (t - SQ_GO - 0.3) + 10);
+        if (t >= SQ_GO) cam.x = Math.max(STALL_X + 8, squidRun(t - SQ_GO).x + 10);
         const z = cam.z;
         const vw = 128 / z;
         const vh = GH / z;
@@ -604,6 +618,8 @@
           yn.headRot = -0.1 + Math.sin(t * 3) * 0.05;
           dg.headRot = -0.12 + Math.sin(t * 3 + 1) * 0.05;
         }
+        // 芝麻狗低頭、甩頭把嘴裡的金幣拋到桌上付錢
+        if (t >= 0.8 && t < 1.8) dg.headRot = path(t, [[0.8, -0.12], [1.15, 0.22, "io"], [COIN_THROW, -0.45, "out"], [1.8, -0.12, "io"]]);
         // 小貓帶著奇怪的隊伍走進來：新角色嚇一跳
         if (arrive) [fox, yn, dg].forEach((st, n) => (st.hop = (st.hop || 0) + jump(t, WALK_IN + n * 0.05, 0.4, 2.5)));
         const rigs = { fx: fox, yn, dg };
@@ -675,9 +691,11 @@
           sqRun = t - SQ_GO;
           sq.sy = tw(sqRun, 0, 0.3, HIDE_SY, 1, "back");
           sq.k = tw(sqRun, 0, 0.3, SQ_K, SQ_RUN, "back");
-          sq.fx = HIDE_X + Math.max(0, SQ_V * (sqRun - 0.3));
+          const run = squidRun(sqRun);
+          sq.fx = run.x;
+          sq.fy = run.y;
           sq.face = "happy";
-          if (sqRun > 0.3) {
+          if (sqRun > 1.4) {
             sq.hop = Math.abs(Math.sin(sqRun * Math.PI * 6)) * 2.2;
             sq.headRot = Math.sin(sqRun * 30) * 0.12;
           }
@@ -712,6 +730,19 @@
           if (t >= TAG_SQ_HIT) tagOn(sq, "sd", 0.7);
         }
         drawCounter();
+        // 金幣：叼在芝麻狗嘴裡 → 拋到桌上（翻轉）→ 一直放在桌上，大家都忘了拿 → 被魷魚舉著帶走
+        const coinRun = sqRun >= 0 ? squidRun(sqRun) : null;
+        if (t < COIN_THROW) {
+          const m = rigToWorld(dg, [25.2, 10.6]);
+          piece("coin", 0, { ax: m[0], ay: m[1] + 2, scale: 0.7 });
+        } else if (t < COIN_THROW + COIN_FLY) {
+          const m = rigToWorld(dg, [25.2, 10.6]);
+          const u = (t - COIN_THROW) / COIN_FLY;
+          piece("coin", 0, { ax: m[0] + (COIN_X - m[0]) * u, ay: m[1] + 2 + (TOP - m[1] - 2) * u - Math.sin(u * Math.PI) * 10, sx: Math.cos(u * Math.PI * 4), scale: 0.7 + 0.4 * u });
+        } else if (!coinRun || !coinRun.coin) {
+          piece("coin", 0, { ax: COIN_X, ay: TOP, scale: 1.1 * (1 + pop(t, COIN_THROW + COIN_FLY, 0.25, 0.4)) });
+          if (t < COIN_THROW + COIN_FLY + 0.5) piece("sparkle", 0, { ax: COIN_X + 3, ay: TOP - 5, scale: Math.sin(((t - COIN_THROW - COIN_FLY) / 0.5) * Math.PI) * 1.2 });
+        }
         if (sq.esc || (!sqHidden && !onGrill)) {
           drawAnimal(sq);
           if (t >= TAG_SQ_HIT) tagOn(sq, "sd", 0.7);
@@ -818,7 +849,13 @@
           piece("question", Math.sin(t * 5 + n) * 0.15, { ax: h[0], ay: h[1] - 3, scale: 0.8 + pop(t, WALK_IN + 0.2, 0.3, 0.5) });
         });
         // 被燙到的熱氣
-        if (sqRun > 0.3 && sqRun < 2.5) {
+        // 魷魚舉著金幣跑（金幣在頭頂上晃）
+        if (coinRun && coinRun.coin) {
+          const h = rigToWorld(sq, [8, -1]);
+          piece("coin", Math.sin(t * 12) * 0.2, { ax: h[0], ay: h[1] - Math.abs(Math.sin(t * 9)) * 0.8, scale: 1.1 });
+          if (sqRun < 1.3) piece("sparkle", 0, { ax: h[0] + 3, ay: h[1] - 6, scale: Math.sin(((sqRun - 0.85) / 0.45) * Math.PI) * 1.4 });
+        }
+        if (sqRun > 1.4 && sqRun < 3.5) {
           const u = (sqRun * 3) % 1;
           piece("dust", 0, { ax: sq.fx - 6 - u * 6, ay: GROUND - 6 - u * 3, scale: 0.5 * (1 - u) });
         }

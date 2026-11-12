@@ -23,6 +23,7 @@ PAL = {
     "=": (128, 74, 52),     # 烤痕
     "@": (96, 96, 108),     # 烤網、夾子
     "^": (255, 138, 60),    # 炭火
+    "~": (204, 148, 40),    # 金幣深金
 }
 
 
@@ -91,6 +92,13 @@ TONGS = [
     "@@@@@@@@@..",
     "........@@.",
     "@@@@@@@@@..",
+]
+COIN = [
+    ".~~~.",
+    "~yhy~",
+    "~y~y~",
+    "~yyy~",
+    ".~~~.",
 ]
 FAN = [
     ".TTTT.",
@@ -385,6 +393,7 @@ def pieces():
         out["sd_" + face] = squid(face)
     out["tongs"] = grid(TONGS, (0, 1))
     out["fan"] = grid(FAN, (2.5, 6))
+    out["coin"] = grid(COIN, (2.5, 5))
     out["stall_back"] = stall_back()
     out["stall_counter"] = stall_counter()
     out["grill"] = grill()
