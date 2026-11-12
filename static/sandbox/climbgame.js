@@ -44,7 +44,7 @@
   let inFlight = 0;
   let seq = 0;
   let lastSnapT = -1;
-  let me = null; // 本機的自己 { x, y, vy, kvx, grounded, face, groundAt, land }
+  let me = null; // 本機的自己 { x, y, vy, kvx, grounded, face, groundAt, land, on（腳下的平台） }
   let kickAck = 0;
   let jumpAt = -1; // 按跳的時間（本機秒）
   const held = new Set();
@@ -176,7 +176,7 @@
     }
     if (!me || s.corrected) {
       // 準備中、或伺服器不接受：以伺服器位置為準
-      me = { x: row[1], y: row[2], vy: 0, kvx: 0, grounded: !!row[6], face: row[3], groundAt: localSec(), land: null };
+      me = { x: row[1], y: row[2], vy: 0, kvx: 0, grounded: !!row[6], face: row[3], groundAt: localSec(), land: null, on: null };
     }
     (s.kicks || []).forEach((k) => {
       if (k[0] <= kickAck) return;
@@ -193,34 +193,70 @@
     return Math.abs(x - ox) < w;
   }
 
-  // 腳下能站的表面（地板、平台、別人的頭）：回傳 x 位置上所有表面高度
-  function surfaces(x, others) {
+  // ---------- 特殊地板（跟 climbgame.py 同一套公式；tau＝開打後經過秒數） ----------
+  const MOVING = 1;
+  const HOLE = 2;
+  function tauNow() {
+    return meta ? clock() - meta.play_start : 0;
+  }
+  function pfOffset(pf, tau) {
+    return pf[3] === MOVING ? cfg.move_amp * Math.sin((2 * Math.PI * (tau + pf[4])) / cfg.move_period) : 0;
+  }
+  function pfVelocity(pf, tau) {
+    if (pf[3] !== MOVING) return 0;
+    return ((cfg.move_amp * 2 * Math.PI) / cfg.move_period) * Math.cos((2 * Math.PI * (tau + pf[4])) / cfg.move_period);
+  }
+  function holeState(pf, tau) {
+    if (pf[3] !== HOLE) return "closed";
+    const cyc = cfg.hole_closed + cfg.hole_open;
+    const u = ((((tau + pf[4]) % cyc) + cyc) % cyc);
+    if (u >= cfg.hole_closed) return "open";
+    return u >= cfg.hole_closed - cfg.hole_warn ? "warn" : "closed";
+  }
+  function solidSpans(pf, tau) {
+    if (pf[3] === HOLE && holeState(pf, tau) === "open") {
+      const c = (pf[1] + pf[2]) / 2;
+      return [[pf[1], c - cfg.hole_w / 2], [c + cfg.hole_w / 2, pf[2]]];
+    }
+    const off = pfOffset(pf, tau);
+    return [[pf[1] + off, pf[2] + off]];
+  }
+
+  // 腳下能站的表面（地板、平台、別人的頭）：[{ top, pf }]，pf 是平台（地板、頭為 null）
+  function surfaces(x, others, tau) {
     const half = cfg.body_w / 2;
-    const tops = [0];
-    platforms.forEach(([k, x0, x1]) => {
-      if (x + half > x0 && x - half < x1) tops.push(k * cfg.floor_h);
+    const tops = [{ top: 0, pf: null }];
+    platforms.forEach((pf) => {
+      if (solidSpans(pf, tau).some(([a, b]) => x + half > a && x - half < b)) tops.push({ top: pf[0] * cfg.floor_h, pf });
     });
     others.forEach((o) => {
-      if (o.alive && overlapX(x, o.x, cfg.body_w)) tops.push(o.y + cfg.body_h);
+      if (o.alive && overlapX(x, o.x, cfg.body_w)) tops.push({ top: o.y + cfg.body_h, pf: null });
     });
     return tops;
   }
 
   function stepMe(dt, others) {
     const now = localSec();
+    const tau = tauNow();
     const move = moveDir();
     if (move) me.face = move;
     me.kvx *= Math.exp(-5 * dt);
+    // 站在移動地板上：跟著地板走
+    const carry = me.grounded && me.on ? pfVelocity(me.on, tau) : 0;
     // 水平：走＋被撞的擊退；撞到別人就停在旁邊（推人的效果由伺服器送給對方）
-    let x = me.x + (move * cfg.speed + me.kvx) * dt;
+    let x = me.x + (move * cfg.speed + me.kvx + carry) * dt;
     x = Math.min(Math.max(x, cfg.body_w / 2), cfg.w - cfg.body_w / 2);
     others.forEach((o) => {
       if (!o.alive || Math.abs(o.y - me.y) >= cfg.body_h * 0.8) return;
       if (Math.abs(x - o.x) < cfg.body_w) x = o.x + (me.x <= o.x ? -cfg.body_w : cfg.body_w);
     });
     me.x = Math.min(Math.max(x, cfg.body_w / 2), cfg.w - cfg.body_w / 2);
-    // 腳下還有沒有東西（走出平台邊緣就開始掉）
-    if (me.grounded && !surfaces(me.x, others).some((t) => Math.abs(t - me.y) < 0.05)) me.grounded = false;
+    // 腳下還有沒有東西（走出平台邊緣、地板滑走、洞打開就開始掉）
+    if (me.grounded) {
+      const under = surfaces(me.x, others, tau).find((s) => Math.abs(s.top - me.y) < 0.05);
+      if (under) me.on = under.pf;
+      else me.grounded = false;
+    }
     if (me.grounded) me.groundAt = now;
     // 起跳：落地前的緩衝、走出邊緣的寬容
     if (jumpAt >= 0 && now - jumpAt <= JUMP_BUFFER && (me.grounded || now - me.groundAt <= COYOTE)) {
@@ -238,9 +274,11 @@
     me.y += me.vy * dt;
     if (me.vy <= 0) {
       // 從上面落下才會站住（平台是單向的）；取最高的那個
-      const land = surfaces(me.x, others).filter((t) => prev >= t - 1e-6 && me.y <= t);
+      const land = surfaces(me.x, others, tau).filter((s) => prev >= s.top - 1e-6 && me.y <= s.top);
       if (land.length) {
-        me.y = Math.max(...land);
+        const best = land.reduce((a, b) => (b.top > a.top ? b : a));
+        me.y = best.top;
+        me.on = best.pf;
         me.vy = 0;
         me.grounded = true;
         me.groundAt = now;
@@ -383,6 +421,37 @@
     R(OX + fw, 0, 6, H, "#2A1A10");
   }
 
+  // 一般平台：木板＋奶油白上緣；移動地板加左右箭頭；開洞地板中間閃紅、打開時中間空掉
+  function drawSpecial(pf, tau, ms) {
+    const y = pf[0] * cfg.floor_h;
+    if (pf[3] === HOLE) {
+      const st = holeState(pf, tau);
+      const c = (pf[1] + pf[2]) / 2;
+      const a = c - cfg.hole_w / 2;
+      const b = c + cfg.hole_w / 2;
+      if (st === "open") {
+        drawPlatform(pf[1], a, y, false);
+        drawPlatform(b, pf[2], y, false);
+        return;
+      }
+      drawPlatform(pf[1], pf[2], y, false);
+      const blink = st === "warn" && Math.floor(ms / 120) % 2 === 0;
+      R(px(a), py(y), (b - a) * TILE, 14, blink ? "#E5484D" : "#A9714F");
+      R(px(a), py(y), 2, 14, "#2A1A10");
+      R(px(b) - 2, py(y), 2, 14, "#2A1A10");
+      return;
+    }
+    const off = pfOffset(pf, tau);
+    drawPlatform(pf[1] + off, pf[2] + off, y, false);
+    if (pf[3] === MOVING) {
+      const cx = px((pf[1] + pf[2]) / 2 + off);
+      const cy = py(y) + 9;
+      R(cx - 14, cy - 1, 28, 3, "#FFF6EA");
+      R(cx - 16, cy - 3, 3, 7, "#FFF6EA");
+      R(cx + 13, cy - 3, 3, 7, "#FFF6EA");
+    }
+  }
+
   function drawPlatform(x0, x1, y, isGround) {
     const X = px(x0);
     const w = (x1 - x0) * TILE;
@@ -466,9 +535,10 @@
     if (cfg) {
       const fh = cfg.floor_h;
       drawPlatform(0, cfg.w, 0, true);
-      platforms.forEach(([k, x0, x1]) => {
-        const y = k * fh;
-        if (y >= cam - 1 && y <= cam + cfg.view_h + 1) drawPlatform(x0, x1, y, false);
+      const tau = tauNow();
+      platforms.forEach((pf) => {
+        const y = pf[0] * fh;
+        if (y >= cam - 1 && y <= cam + cfg.view_h + 1) drawSpecial(pf, tau, ms);
       });
     }
     // 畫面底部的危險線
@@ -536,6 +606,7 @@
             "<li>最上面的人爬上新的一層，<b>畫面就往上挪</b></li>" +
             "<li>走去撞人可以<b>把人推開</b>，也能踩在別人頭上</li>" +
             "<li><b>掉出畫面就淘汰</b>，最後留在場上、<b>層數最高</b>的人贏</li>" +
+            "<li>8 樓起有<b>會左右移動</b>的地板，還有中間<b>閃紅就要開洞</b>的地板</li>" +
             "</ul>" +
             '<p class="mg-tip">' + n + " 秒後開始</p>";
     }

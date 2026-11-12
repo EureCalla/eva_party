@@ -40,11 +40,27 @@ VIEW_H = 20.0  # 畫面高度（格）；前端照這個畫
 DT = 0.025  # 模擬步長（秒）
 STALE_SEC = 0.5  # 多久沒回報就由伺服器代為下墜
 SPEED_SLACK = 1.3  # 速度檢查的寬容倍數
-MOVE_BUDGET_CAP = (SPEED + PUSH_V) * 1.0  # 移動額度最多累積 1 秒
+MOVE_BUDGET_CAP = (SPEED + PUSH_V + 2.4) * 1.0  # 移動額度最多累積 1 秒（含站在移動地板上）
 RISE_TOL = 0.6  # 高度檢查的寬容（格）
 FOOT_TOL = 0.15  # 判斷腳下有沒有東西的寬容（格）
 FRAME_EVERY = 0.1  # 直播緩衝每幾秒存一格
 FRAME_KEEP = 4.0  # 直播緩衝保留幾秒
+# 特殊地板（8 樓起）：左右移動、或中間週期性開洞；位置與開關都是「開打後經過秒數」的函式，前端算出來一樣
+SPECIAL_FROM = 8  # 從幾樓開始出現
+SPECIAL_BASE = 0.2  # 8 樓起每塊平台是特殊地板的機率
+SPECIAL_STEP = 0.1  # 每往上 SPECIAL_EVERY 層加多少
+SPECIAL_EVERY = 5
+SPECIAL_MAX = 0.6
+MOVE_AMP = 3.0  # 移動地板左右各 3 格
+MOVE_PERIOD = 8.0  # 來回一次 8 秒（單趟約 4 秒）
+MOVE_SPEED_MAX = MOVE_AMP * 2 * math.pi / MOVE_PERIOD  # 移動地板最快速度（約 2.4 格/秒）
+HOLE_PLATFORM_W = 5.0  # 開洞地板寬
+HOLE_W = 1.6  # 中間洞寬
+HOLE_CLOSED = 2.5  # 關著的秒數（最後 HOLE_WARN 秒閃紅）
+HOLE_OPEN = 1.0  # 開著的秒數
+HOLE_WARN = 0.6
+TIME_TOLS = (0.0, -0.12, -0.25, 0.1)  # 判斷腳下時往前後多看幾個時間點（網路延遲、時鐘誤差）
+NORMAL, MOVING, HOLE = 0, 1, 2
 
 
 def gap(a0: float, a1: float, b0: float, b1: float) -> float:
@@ -57,7 +73,50 @@ def climb_info() -> dict[str, Any]:
     return {
         "w": WIDTH, "floor_h": FLOOR_H, "body_w": BODY_W, "body_h": BODY_H, "speed": SPEED, "gravity": GRAVITY,
         "jump_v": JUMP_V, "push_v": PUSH_V, "view_h": VIEW_H, "frame_every": FRAME_EVERY,
+        "move_amp": MOVE_AMP, "move_period": MOVE_PERIOD, "hole_w": HOLE_W,
+        "hole_closed": HOLE_CLOSED, "hole_open": HOLE_OPEN, "hole_warn": HOLE_WARN,
     }
+
+
+def special_chance(floor: int) -> float:
+    """Return how likely a platform on ``floor`` is a moving or holed one (0 below SPECIAL_FROM)."""
+    if floor < SPECIAL_FROM:
+        return 0.0
+    return min(SPECIAL_MAX, SPECIAL_BASE + SPECIAL_STEP * ((floor - SPECIAL_FROM) // SPECIAL_EVERY))
+
+
+def platform_offset(pf: list[float], tau: float) -> float:
+    """Return how far a moving platform has slid from its base at ``tau`` seconds into play (0 for others)."""
+    if pf[3] != MOVING:
+        return 0.0
+    return MOVE_AMP * math.sin(2 * math.pi * (tau + pf[4]) / MOVE_PERIOD)
+
+
+def platform_velocity(pf: list[float], tau: float) -> float:
+    """Return a moving platform's sideways speed at ``tau`` (0 for others)."""
+    if pf[3] != MOVING:
+        return 0.0
+    return MOVE_SPEED_MAX * math.cos(2 * math.pi * (tau + pf[4]) / MOVE_PERIOD)
+
+
+def hole_state(pf: list[float], tau: float) -> str:
+    """Return closed / warn / open for a holed platform at ``tau`` (others are always closed)."""
+    if pf[3] != HOLE:
+        return "closed"
+    u = (tau + pf[4]) % (HOLE_CLOSED + HOLE_OPEN)
+    if u >= HOLE_CLOSED:
+        return "open"
+    return "warn" if u >= HOLE_CLOSED - HOLE_WARN else "closed"
+
+
+def solid_spans(pf: list[float], tau: float) -> list[tuple[float, float]]:
+    """Return the parts of a platform you can stand on at ``tau``: one span, or two while its hole is open."""
+    x0, x1 = pf[1], pf[2]
+    if pf[3] == HOLE and hole_state(pf, tau) == "open":
+        c = (x0 + x1) / 2
+        return [(x0, c - HOLE_W / 2), (c + HOLE_W / 2, x1)]
+    off = platform_offset(pf, tau)
+    return [(x0 + off, x1 + off)]
 
 
 class ClimbBattle:
@@ -90,7 +149,7 @@ class ClimbBattle:
                 "seq": -1, "checked_at": self.play_start, "budget": 0.5, "seen_at": self.play_start,
                 "move": 0, "kicks": [], "kick_seq": 0,
             }
-        self.platforms: list[list[float]] = []  # [層, 左緣, 右緣]；第 0 層是整排地板，不放在這裡
+        self.platforms: list[list[float]] = []  # [層, 左緣, 右緣, 種類, 相位]；第 0 層是整排地板，不放在這裡
         self.top_built = 0
         self._build_to(GEN_AHEAD)
         self.camera = -CAM_MARGIN  # 畫面底線（只往上）
@@ -110,38 +169,81 @@ class ClimbBattle:
         while self.top_built < floor:
             k = self.top_built + 1
             below = [(p[1], p[2]) for p in self.platforms if p[0] == k - 1] or [(0.0, WIDTH)]
-            placed: list[list[float]] = []
-            order = below[:]
-            self.rng.shuffle(order)
-            for b0, b1 in order:
-                if len(placed) < 2 and not any(gap(b0, b1, q[1], q[2]) <= PLATFORM_REACH for q in placed):
-                    self._place_near(k, b0, b1, placed)
-            if len(placed) == 1 and self.rng.random() < 1 / 3:
-                b0, b1 = self.rng.choice(below)
-                self._place_near(k, b0, b1, placed)
+            # 移動地板兩側要多留空間，有時第二塊放不下 → 整層重來；試 10 次都不行就只放一般平台
+            for attempt in range(11):
+                special = attempt < 10
+                placed: list[list[float]] = []
+                order = below[:]
+                self.rng.shuffle(order)
+                for b0, b1 in order:
+                    if len(placed) < 2 and not any(gap(b0, b1, q[1], q[2]) <= PLATFORM_REACH for q in placed):
+                        self._place_near(k, b0, b1, placed, special)
+                if len(placed) == 1 and self.rng.random() < 1 / 3:
+                    b0, b1 = self.rng.choice(below)
+                    self._place_near(k, b0, b1, placed, special)
+                if placed and all(any(gap(b0, b1, q[1], q[2]) <= PLATFORM_REACH for q in placed) for b0, b1 in below):
+                    break
             self.platforms.extend(placed)
             self.top_built = k
 
-    def _place_near(self, k: int, b0: float, b1: float, placed: list[list[float]]) -> None:
-        """Add a platform on floor ``k`` within reach of the platform b0..b1 below, clear of ``placed``."""
-        for _try in range(40):
-            w = float(self.rng.randint(*PLATFORM_W))
-            lo, hi = max(0.0, b0 - PLATFORM_REACH - w), min(WIDTH - w, b1 + PLATFORM_REACH)  # 只在場內取，不夾到牆邊
-            x0 = round(self.rng.uniform(lo, hi), 2)
-            x1 = round(x0 + w, 2)
-            if gap(b0, b1, x0, x1) <= PLATFORM_REACH and all(x0 > q[2] + 2 or x1 < q[1] - 2 for q in placed):
-                placed.append([k, x0, x1])
-                return
+    def _place_near(self, k: int, b0: float, b1: float, placed: list[list[float]], special: bool = True) -> None:
+        """Add a platform on floor ``k`` within reach of the platform b0..b1 below, clear of ``placed``.
 
-    def _platform_under(self, x: float, y: float) -> int | None:
-        """Return the floor whose surface is at the feet (x, y), or None; floor 0 is the whole ground."""
+        8 樓起有機率是特殊地板：移動地板（3～4 格寬，左右滑動範圍都在場內）或開洞地板（5 格寬）。
+        基準位置跳得到，移動地板就是在來回途中一定有跳得到的時候。同層兩塊之間另外留出移動範圍。
+        特殊地板放不下時改放一般平台。
+        """
+        kinds = [NORMAL]
+        if special and self.rng.random() < special_chance(k):
+            kinds.insert(0, self.rng.choice((MOVING, HOLE)))
+        for kind in kinds:
+            for _try in range(40):
+                if kind == HOLE:
+                    w = HOLE_PLATFORM_W
+                elif kind == MOVING:
+                    w = float(self.rng.randint(3, 4))
+                else:
+                    w = float(self.rng.randint(*PLATFORM_W))
+                edge = MOVE_AMP if kind == MOVING else 0.0  # 移動地板滑到最邊也不能出牆
+                lo = max(edge, b0 - PLATFORM_REACH - w)
+                hi = min(WIDTH - w - edge, b1 + PLATFORM_REACH)  # 只在場內取，不夾到牆邊
+                if lo > hi:
+                    continue
+                x0 = round(self.rng.uniform(lo, hi), 2)
+                x1 = round(x0 + w, 2)
+                clear = [2 + MOVE_AMP * ((kind == MOVING) + (q[3] == MOVING)) for q in placed]
+                if gap(b0, b1, x0, x1) <= PLATFORM_REACH and all(
+                    x0 > q[2] + c or x1 < q[1] - c for q, c in zip(placed, clear)
+                ):
+                    period = MOVE_PERIOD if kind == MOVING else HOLE_CLOSED + HOLE_OPEN
+                    placed.append([k, x0, x1, kind, round(self.rng.uniform(0, period), 2) if kind else 0.0])
+                    return
+
+    def _tau(self, at: float | None = None) -> float:
+        """Return seconds into play at ``at`` (default: the simulation time); platforms move by this clock."""
+        return (self.t if at is None else at) - self.play_start
+
+    def _platform_at(self, x: float, y: float, taus: tuple[float, ...] | list[float]) -> list[float] | None:
+        """Return the platform under the feet (x, y) at any of the times ``taus``, or None (ground not included)."""
+        half = BODY_W / 2
+        for pf in self.platforms:
+            if abs(y - pf[0] * FLOOR_H) > FOOT_TOL:
+                continue
+            for tau in taus:
+                if any(x + half > a and x - half < b for a, b in solid_spans(pf, tau)):
+                    return pf
+        return None
+
+    def _platform_under(self, x: float, y: float, taus: tuple[float, ...] | list[float] | None = None) -> int | None:
+        """Return the floor whose surface is at the feet (x, y), or None; floor 0 is the whole ground.
+
+        ``taus`` are the play times to check (default: now in the simulation); reports check a few
+        times around their arrival so network delay does not count as missing footing.
+        """
         if abs(y) <= FOOT_TOL:
             return 0
-        half = BODY_W / 2
-        for k, x0, x1 in self.platforms:
-            if abs(y - k * FLOOR_H) <= FOOT_TOL and x + half > x0 and x - half < x1:
-                return k
-        return None
+        pf = self._platform_at(x, y, (self._tau(),) if taus is None else taus)
+        return pf[0] if pf is not None else None
 
     def _head_under(self, p: dict[str, Any], x: float, y: float) -> bool:
         """Return True when the feet (x, y) rest on another player's head."""
@@ -194,7 +296,12 @@ class ClimbBattle:
     def _fall(self, p: dict[str, Any]) -> None:
         """Move a player who is not reporting: knock-back slides, gravity pulls, platforms catch them."""
         p["vx"] *= math.exp(-5 * DT)
-        p["x"] = min(max(p["x"] + p["vx"] * DT, BODY_W / 2), WIDTH - BODY_W / 2)
+        tau = self._tau()
+        carry = 0.0
+        if p["grounded"]:
+            pf = self._platform_at(p["x"], p["y"], (tau,))
+            carry = platform_velocity(pf, tau) if pf is not None else 0.0  # 站在移動地板上跟著走
+        p["x"] = min(max(p["x"] + (p["vx"] + carry) * DT, BODY_W / 2), WIDTH - BODY_W / 2)
         on = self._platform_under(p["x"], p["y"])
         if on is not None and p["vy"] <= 0:
             p["vy"], p["grounded"] = 0.0, True
@@ -204,7 +311,12 @@ class ClimbBattle:
         p["vy"] -= GRAVITY * DT
         p["y"] += p["vy"] * DT
         if p["vy"] <= 0:
-            for k in [0] + [q[0] for q in self.platforms if q[1] < p["x"] + BODY_W / 2 and q[2] > p["x"] - BODY_W / 2]:
+            half = BODY_W / 2
+            under = [
+                q[0] for q in self.platforms
+                if any(p["x"] + half > a and p["x"] - half < b for a, b in solid_spans(q, tau))
+            ]
+            for k in [0] + under:
                 top = k * FLOOR_H
                 if prev >= top >= p["y"]:
                     p["y"], p["vy"], p["grounded"] = top, 0.0, True
@@ -279,7 +391,7 @@ class ClimbBattle:
                     if seq is not None:
                         p["seq"] = seq
                     if land is not None:
-                        self._landed(p, land[0], land[1])
+                        self._landed(p, land[0], land[1], now)
                     corrected = not self._accept(p, x, y, vy, grounded, now)
                     p["move"] = max(-1, min(1, int(move)))
                     if face in (-1, 1):
@@ -294,7 +406,7 @@ class ClimbBattle:
             snap["kicks"] = p["kicks"]
             return snap
 
-    def _landed(self, p: dict[str, Any], x: float, y: float) -> None:
+    def _landed(self, p: dict[str, Any], x: float, y: float, now: float) -> None:
         """Take the player's last landing spot if it is new, reachable and really has footing there."""
         if p.get("land") == (x, y):
             return
@@ -303,7 +415,8 @@ class ClimbBattle:
             return  # 比站過的地方高太多，不採用
         if abs(x - p["x"]) > MOVE_BUDGET_CAP:
             return
-        floor = self._platform_under(x, y)
+        tau = self._tau(now)
+        floor = self._platform_under(x, y, [tau - 0.05 * i for i in range(14)] + [tau + 0.1])  # 落地可能是 0.6 秒前
         if floor is not None:
             self._stand(p, floor)
         elif self._head_under(p, x, y):
@@ -311,7 +424,8 @@ class ClimbBattle:
 
     def _accept(self, p: dict[str, Any], x: float, y: float, vy: float, grounded: bool, now: float) -> bool:
         """Move the player to (x, y) if it is fast and high enough to be real and the footing exists."""
-        p["budget"] = min(MOVE_BUDGET_CAP, p["budget"] + (SPEED + PUSH_V) * SPEED_SLACK * max(0.0, now - p["checked_at"]))
+        rate = (SPEED + PUSH_V + MOVE_SPEED_MAX) * SPEED_SLACK
+        p["budget"] = min(MOVE_BUDGET_CAP, p["budget"] + rate * max(0.0, now - p["checked_at"]))
         p["checked_at"] = now
         if not (BODY_W / 2 - 0.01 <= x <= WIDTH - BODY_W / 2 + 0.01) or not math.isfinite(y):
             return False
@@ -322,7 +436,7 @@ class ClimbBattle:
             return False  # 比站過的地方跳得還高
         floor = None
         if grounded:
-            floor = self._platform_under(x, y)
+            floor = self._platform_under(x, y, [self._tau(now) + d for d in TIME_TOLS])
             if floor is None and not self._head_under(p, x, y):
                 return False  # 說站穩了，腳下卻沒有東西
         p["budget"] -= dx
