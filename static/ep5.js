@@ -398,15 +398,16 @@
       // 第五集的新角色：狐狸站在攤子後面（墊著箱子，面向左），西施犬排第一、芝麻狗排第二
       const FX_X = STALL_X + 15;
       const FX_Y = GROUND - 6;
-      const YN_X = 154;
-      const DG_X = 128;
+      const YN_X = 158;
+      const DG_X = 124;
+      const DG_K = 1.3; // 芝麻狗是中型犬，比其他小動物大一號
 
       // 公布名字：每隻 1.8 秒，依序是狐狸、芝麻狗、西施犬；魷魚先不給
       const TAG_AT = 15.8;
       const STEP = 1.8;
       const TAGS = [
         { kind: "fx", cap: "cap_lesley", focus: [196, 36], scale: 1 },
-        { kind: "dg", cap: "cap_sylvia", focus: [140, 44], scale: 1 },
+        { kind: "dg", cap: "cap_sylvia", focus: [136, 42], scale: 1.2 },
         { kind: "yn", cap: "cap_yennefer", focus: [168, 46], scale: 0.85 },
       ];
       const THROW = 0.55;
@@ -429,7 +430,7 @@
       const pc = (t) => (t <= P0 ? t : t <= P1 ? P0 : t - PAUSE);
       const FOOT0 = Object.assign({ fx: FX_X, yn: YN_X, dg: DG_X }, HOME);
       const GAP = {
-        dg: 44, fx: 70, pair: 110, ln: 200, br: 256, sn: 306, el: 366, gf: 408, // 後排
+        dg: 44, fx: 78, pair: 116, ln: 200, br: 256, sn: 306, el: 366, gf: 408, // 後排
         yn: 22, rb: 56, sq: 76, gp: 94, hm: 110, qk: 126, ot: 146, mk: 168, // 前排
       };
       const START = {};
@@ -584,7 +585,7 @@
         // ---- 新角色 ----
         const fox = { kind: "fx", fx: FX_X, fy: FX_Y, sx: -1, face: "open", prop: "fan", armRot: 0 };
         const yn = { kind: "yn", fx: YN_X, fy: FRONT, face: "open" };
-        const dg = { kind: "dg", fx: DG_X, face: "open" };
+        const dg = { kind: "dg", k: DG_K, fx: DG_X, face: "open" };
         // 搧火
         if (t < FAN_END) fox.armRot = -0.5 + Math.sin(t * 14) * 0.45;
         else {

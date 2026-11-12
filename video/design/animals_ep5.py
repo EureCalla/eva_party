@@ -3,8 +3,8 @@
 形狀工具與角色框的用法同 animals.py：每隻動物有自己的角色框（寬 x 高，腳底踩在最下面一列），
 零件的 x0/y0 與 pivot 都在框的座標系裡。都畫成面向右，面向左的由影片程式水平翻面。
 
-芝麻狗（Sylvia）的毛色照參考照片：白底短毛撒上一顆顆芝麻大小的灰黑點，背部、身側較密，
-胸口、前腿以白為主只有零星小點；黑色垂耳、眼睛周圍一圈黑；口鼻白色帶幾顆小灰點；尾巴近尾端有一圈黑。
+芝麻狗（Sylvia）頭比較大、半立耳（耳根立起、耳尖往前折）；毛色照參考照片：白底短毛撒上一顆顆芝麻大小的灰黑點，背部、身側較密，
+胸口、前腿以白為主只有零星小點；黑色耳朵、眼睛周圍一圈黑；口鼻白色帶幾顆小灰點；尾巴近尾端有一圈黑。
 芝麻點要比一格還小，所以狗用兩倍細格畫（unit 0.5、fine），描邊加粗成兩細格，跟其他角色的一格描邊一樣粗。
 """
 from animals import Mask, crop, eye, paint, stamp
@@ -245,38 +245,42 @@ def dog_body():
 
 def dog_head(kind):
     m = Mask(FW, FH)
-    m.disk(41, 12, 6.4, 5.8)         # 頭
-    m.disk(48, 15, 4.4, 3.0)         # 口鼻
-    m.box(34, 14, 41, 25)            # 脖子
+    m.disk(40, 13, 8.4, 7.6)         # 頭（大一點）
+    m.disk(47, 16.6, 4.6, 3.4)       # 口鼻
+    m.box(33, 15, 41, 26)            # 脖子
     g = thick_outline(m, "w")
 
     def density(x, y):
-        if x >= 45 and y >= 13:      # 口鼻：只有幾顆小灰點
+        if x >= 45 and y >= 14:      # 口鼻：只有幾顆小灰點
             return 0.04
-        return 0.12
+        return 0.1
     sesame(g, density, 23)
     patch = Mask(FW, FH)             # 眼睛周圍的黑色花紋（往頭頂延伸）
-    patch.disk(43.4, 10.2, 2.8, 2.4)
-    patch.disk(40.6, 8, 2.4, 2.0)
+    patch.disk(43.2, 11.4, 3.2, 2.8)
+    patch.disk(39.4, 8.6, 3.0, 2.4)
     for y in range(FH):
         for x in range(FW):
             if patch.m[y][x] and g[y][x] not in ".o":
                 g[y][x] = "0"
-    ear = Mask(FW, FH)               # 黑色垂耳
-    ear.stroke([(38.4, 7), (35.6, 12), (35.6, 17)], 2.8, 2.2)
-    for y in range(FH):
-        for x in range(FW):
-            if ear.m[y][x]:
-                g[y][x] = "o" if g[y][x] == "." else "0"
+    # 黑色半立耳：耳根立起來，耳尖往前折下（分開畫，折線才看得出來）
+    base = Mask(FW, FH)
+    base.stroke([(35.4, 10), (35, 3.4)], 3.2, 2.6)
+    tip = Mask(FW, FH)
+    tip.stroke([(35.8, 2.6), (38.6, 3.6), (40.6, 6)], 2.2, 1.3)
+    for part in (base.outlined("0"), tip.outlined("0")):
+        for y in range(FH):
+            for x in range(FW):
+                if part[y][x] != ".":
+                    g[y][x] = part[y][x]
     # 眼睛（在黑眼圈裡，用高光表現）
     if kind == "open":
-        stamp(g, 43, 9, ["hk", "kk"])
+        stamp(g, 43, 10, ["hk", "kk"])
     elif kind == "happy":
-        stamp(g, 42, 9, [".hh.", "h..h"])
+        stamp(g, 42, 10, [".hh.", "h..h"])
     else:
-        stamp(g, 42, 8, ["h..h", ".hh.", "h..h"])
-    stamp(g, 51, 13, ["0", "0"])     # 鼻頭
-    stamp(g, 47, 18, ["k.", ".k"])   # 嘴角
+        stamp(g, 42, 9, ["h..h", ".hh.", "h..h"])
+    stamp(g, 50, 14, ["00", "00"])   # 鼻頭
+    stamp(g, 46, 20, ["k.", ".k"])   # 嘴角
     return fine_piece(g, (37, 25))
 
 
