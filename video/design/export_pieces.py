@@ -16,6 +16,7 @@ import animals_ep3  # noqa: E402
 import animals_ep4  # noqa: E402
 import animals_ep5  # noqa: E402
 import animals_ep6  # noqa: E402
+import animals_ep7  # noqa: E402
 import cat_sprites as cs  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -44,11 +45,12 @@ PAL.update(animals_ep3.PAL)
 PAL.update(animals_ep4.PAL)
 PAL.update(animals_ep5.PAL)
 PAL.update(animals_ep6.PAL)
+PAL.update(animals_ep7.PAL)
 
 # 零件注入的 composition（每一集一個檔），以及遊戲頁面共用的零件檔
-COMPOSITIONS = ["story.html", "ep2.html", "ep3.html", "ep4.html", "ep5.html", "ep6.html"]
+COMPOSITIONS = ["story.html", "ep2.html", "ep3.html", "ep4.html", "ep5.html", "ep6.html", "ep7.html"]
 SPRITES_JS = Path(__file__).resolve().parent.parent.parent / "static" / "sprites.js"
-# 第二～六集公布名字的字卡：(零件名, 動物, 英文名)
+# 第二～七集公布名字的字卡：(零件名, 動物, 英文名)
 NAME_CARDS = [("cap_ethan", "狐獴", "Ethan"), ("cap_ann", "水獺", "Ann"),
               ("cap_charlotte", "長頸鹿", "Charlotte"), ("cap_allen", "大象", "Allen"),
               ("cap_joy", "松鼠", "Joy"), ("cap_mia", "天竺鼠", "Mia"), ("cap_leo", "倉鼠", "Leo"),
@@ -58,7 +60,9 @@ NAME_CARDS = [("cap_ethan", "狐獴", "Ethan"), ("cap_ann", "水獺", "Ann"),
               ("cap_lesley", "狐狸", "Lesley"), ("cap_sylvia", "狗", "Sylvia"),
               ("cap_yennefer", "西施犬", "Yennefer"), ("cap_eden", "魷魚", "Eden"),
               ("cap_tiffany", "小企鵝", "Tiffany"), ("cap_calla", "仙鶴", "Calla"),
-              ("cap_sally", "小雞", "Sally"), ("cap_jade", "貓頭鷹", "Jade")]
+              ("cap_sally", "小雞", "Sally"), ("cap_jade", "貓頭鷹", "Jade"),
+              ("cap_uma", "水豚", "Uma"), ("cap_bella", "迷你豬", "Bella"),
+              ("cap_eli", "青蛙", "Eli"), ("cap_yoga", "樹懶", "Yoga")]
 
 BOW = ["dd...dd", "drd.drd", "drrdrrd", "drd.drd", "dd...dd"]
 ENVELOPE = ["mmmmmmmm", "mcmccmcm", "mccmmccm", "mccTTccm", "mmmmmmmm"]
@@ -440,8 +444,12 @@ def main():
     pieces.update(animals_ep4.pieces())
     pieces.update(animals_ep5.pieces())
     pieces.update(animals_ep6.pieces())
+    pieces.update(animals_ep7.pieces())
     pieces["stall_sign"] = sign_board([("烤魷魚", 26, 22, "T")], base="X", grain="Y", frame="Q")
     pieces["stall_sign"]["unit"] = 0.5
+    # 第七集樹懶慢慢動的時候，畫面下方的字卡
+    pieces["cap_dots"] = sign_board([("……", 30, 20, "T")], base="X", grain="Y", frame="Q")
+    pieces["cap_dots"]["unit"] = 0.5
     for key, animal, name in NAME_CARDS:
         pieces[key] = sign_board([(animal, 15, 12, "T"), (name, 22, 30, "U")], base="X", grain="Y", frame="Q")
         pieces[key]["unit"] = 0.5
