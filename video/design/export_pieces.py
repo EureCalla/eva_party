@@ -48,9 +48,9 @@ PAL.update(animals_ep6.PAL)
 PAL.update(animals_ep7.PAL)
 
 # 零件注入的 composition（每一集一個檔），以及遊戲頁面共用的零件檔
-COMPOSITIONS = ["story.html", "ep2.html", "ep3.html", "ep4.html", "ep5.html", "ep6.html", "ep7.html"]
+COMPOSITIONS = ["story.html", "ep2.html", "ep3.html", "ep4.html", "ep5.html", "ep6.html", "ep7.html", "ep8.html"]
 SPRITES_JS = Path(__file__).resolve().parent.parent.parent / "static" / "sprites.js"
-# 第二～七集公布名字的字卡：(零件名, 動物, 英文名)
+# 第二～八集公布名字的字卡（大結局公布小貓自己的名字）：(零件名, 動物, 英文名)
 NAME_CARDS = [("cap_ethan", "狐獴", "Ethan"), ("cap_ann", "水獺", "Ann"),
               ("cap_charlotte", "長頸鹿", "Charlotte"), ("cap_allen", "大象", "Allen"),
               ("cap_joy", "松鼠", "Joy"), ("cap_mia", "天竺鼠", "Mia"), ("cap_leo", "倉鼠", "Leo"),
@@ -62,7 +62,8 @@ NAME_CARDS = [("cap_ethan", "狐獴", "Ethan"), ("cap_ann", "水獺", "Ann"),
               ("cap_tiffany", "小企鵝", "Tiffany"), ("cap_calla", "仙鶴", "Calla"),
               ("cap_sally", "小雞", "Sally"), ("cap_jade", "貓頭鷹", "Jade"),
               ("cap_uma", "水豚", "Uma"), ("cap_bella", "迷你豬", "Bella"),
-              ("cap_eli", "青蛙", "Eli"), ("cap_yoga", "樹懶", "Yoga")]
+              ("cap_eli", "青蛙", "Eli"), ("cap_yoga", "樹懶", "Yoga"),
+              ("cap_eva", "小貓", "Eva")]
 
 BOW = ["dd...dd", "drd.drd", "drrdrrd", "drd.drd", "dd...dd"]
 ENVELOPE = ["mmmmmmmm", "mcmccmcm", "mccmmccm", "mccTTccm", "mmmmmmmm"]
@@ -147,6 +148,53 @@ def front_parts():
     out["f_tail"] = grid_piece(cs.TAIL, cs.OX + 30, cs.OY + 18, (cs.OX + 31, cs.OY + 30))
     out["paw"] = grid_piece(cs.PAW, 0, 0, (2, 2))
     return out
+
+
+def front_dress_body():
+    """正面的身體穿粉紅孕婦洋裝（大結局合照用）：胸下粉藍緞帶＋蝴蝶結、白色蕾絲下襬，腳露在外面。"""
+    g = cs.base()
+    top, hem = cs.OY + 19, cs.OY + 28
+    for y in range(top, hem + 1):
+        for x in range(W):
+            c = g[y][x]
+            if c in "whbn":
+                g[y][x] = "P"
+            elif c == "s":
+                g[y][x] = "R"
+            elif c == "o":
+                g[y][x] = "Q"
+    for x in range(W):
+        if g[top + 1][x] == "P":
+            g[top + 1][x] = "V"
+        if g[hem][x] in "PR":
+            g[hem][x] = "h" if x % 2 else "L"
+    cs.stamp(g, cs.OX + 14, top, ["U..U", ".UU.", "U..U"])
+    cs.stamp(g, cs.OX + 10, top + 4, [".LL", "LL.", "L.."])
+    rows = ["".join(g[cs.OY + y][cs.OX:cs.OX + 32]) for y in range(17, 32)]
+    return grid_piece(rows, cs.OX, cs.OY + 17, (cs.OX + 16, cs.OY + 32))
+
+
+def back_head(bow):
+    """背影的頭（大結局最後一幕，背對鏡頭看照片）：沿用正面頭的輪廓重新描邊，裡面全部是白毛
+    （五官、耳朵內側都看不到）；蝴蝶結在正面是畫面右邊，轉到背後就換到左邊。"""
+    src = cs.base()
+    m = blank()
+    for y in range(cs.OY, cs.OY + 18):
+        for x in range(W):
+            m[y][x] = src[y][x] != "."
+    g = outlined(m)
+    # 後腦勺下緣的陰影、耳朵根部與頭頂的幾撮毛
+    for y in range(cs.OY + 15, cs.OY + 18):
+        for x in range(W):
+            if g[y][x] == "w":
+                g[y][x] = "s"
+    for x, y in ((9, 7), (10, 8), (21, 7), (22, 8), (14, 4), (15, 5), (17, 4)):
+        if g[cs.OY + y][cs.OX + x] == "w":
+            g[cs.OY + y][cs.OX + x] = "s"
+    if bow:
+        cs.stamp(g, cs.OX + 32 - 20 - 7, cs.OY + 2, BOW)
+    rows = ["".join(g[cs.OY + y][cs.OX:cs.OX + 32]) for y in range(0, 18)]
+    return grid_piece(rows, cs.OX, cs.OY, (cs.OX + 16, cs.OY + 17))
 
 
 # ---------- 側面零件 ----------
@@ -450,6 +498,15 @@ def main():
     # 第七集樹懶慢慢動的時候，畫面下方的字卡
     pieces["cap_dots"] = sign_board([("……", 30, 20, "T")], base="X", grain="Y", frame="Q")
     pieces["cap_dots"]["unit"] = 0.5
+    # 大結局：預祝字卡、處罰牌
+    pieces["cap_wish"] = sign_board([("預祝 Eva", 18, 13, "U"), ("順風順產！", 19, 31, "T")],
+                                    base="X", grain="Y", frame="Q")
+    pieces["cap_wish"]["unit"] = 0.5
+    pieces["cap_punish"] = sign_board([("處罰！", 26, 22, "T")], base="X", grain="Y", frame="Q")
+    pieces["cap_punish"]["unit"] = 0.5
+    pieces["f_back"] = back_head(False)
+    pieces["f_body_dress"] = front_dress_body()
+    pieces["f_back_bow"] = back_head(True)
     for key, animal, name in NAME_CARDS:
         pieces[key] = sign_board([(animal, 15, 12, "T"), (name, 22, 30, "U")], base="X", grain="Y", frame="Q")
         pieces[key]["unit"] = 0.5
