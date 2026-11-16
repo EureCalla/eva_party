@@ -25,7 +25,7 @@ STAGES: list[tuple[str, str]] = [
 STAGE_KEYS: list[str] = [k for k, _ in STAGES]
 
 # 交換禮物遊戲：聚光燈每份禮物倒數秒數、每份禮物最多幾位挑戰者（不含候選人）、每人初始搶奪券
-EXCHANGE_ROUND_SEC: int = 180
+EXCHANGE_ROUND_SEC: int = 120
 MAX_CHALLENGERS: int = 5
 START_TICKETS: int = 5
 
