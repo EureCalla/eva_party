@@ -102,6 +102,7 @@
     $("tab-games").classList.toggle("current", name !== "pr-xr");
     $("tab-rules").classList.toggle("current", name === "pr-xr");
     document.querySelector(".pr-tabs").hidden = name === "pr-play" || name === "pr-nologin";
+    $("pr-note").hidden = name === "pr-play" || name === "pr-nologin";
   }
 
   function goHome(keepLogin) {
@@ -214,6 +215,7 @@
     if (!tk) return view("pr-nologin");
     sessionToken = tk;
     const r = await api("/api/practice/state");
+    if (r.ok && r.data.admins && r.data.admins.length) $("pr-admins").textContent = "管理者（" + r.data.admins.join("、") + "）";
     if (!r.ok) {
       if (r.status === 409) {
         view("pr-lobby");

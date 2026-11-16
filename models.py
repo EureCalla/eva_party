@@ -1262,6 +1262,13 @@ class GameDB:
             if block is not None:
                 return block, None
             run = self.practice.get(player["id"])
+            # 大廳備註「有 bug 回報給管理者」用的名單
+            admins = [
+                r["en_name"] for r in self.conn.execute(
+                    "SELECT en_name FROM players WHERE permission = 'admin' AND is_deleted = 0 "
+                    "ORDER BY en_name COLLATE NOCASE"
+                )
+            ]
         now = self.clock()
         round_info = None
         if run is not None:
@@ -1284,6 +1291,7 @@ class GameDB:
             "now": now,
             "round": round_info,
             "me": {"name": player["en_name"], "in_game": True},
+            "admins": admins,
             "minigames": [{"key": k, "name": n} for k, n in cms.MINIGAMES.items()],
         }
 

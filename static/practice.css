@@ -9,6 +9,21 @@
 .pr-head { text-align: center; margin-bottom: 18px; }
 .pr-title { margin: 0; color: var(--cream); font-size: clamp(1.4rem, 5vw, 2.2rem); letter-spacing: 0.12em; }
 .pr-sub { margin: 4px 0 14px; color: var(--dress); font-size: clamp(0.85rem, 3.4vw, 1.05rem); }
+/* 特別備註：有 bug 回報給管理者 */
+.pr-note {
+  width: min(640px, 100%);
+  box-sizing: border-box;
+  margin: 0 auto 14px;
+  padding: 8px 12px;
+  color: var(--outline);
+  background: var(--yellow, #FFE7A3);
+  border: 3px solid var(--outline);
+  box-shadow: 4px 4px 0 var(--deep);
+  font-size: clamp(0.85rem, 3.2vw, 1rem);
+  line-height: 1.5;
+}
+.pr-note b { color: var(--pink); }
+.pr-note[hidden] { display: none; }
 .pr-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .pr-tabs[hidden] { display: none; }
 .pr-tab { background: var(--cream); color: var(--deep); }

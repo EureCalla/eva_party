@@ -513,7 +513,7 @@
       const mine = latest.p.find((p) => p[0] === meId);
       if (mine && !mine[2]) hud = "你被淘汰了";
       else if (localSec() < imeUntil) hud = "偵測到中文輸入法，已自動當成英文按鍵（不用切換）";
-      else hud = "打出中間的字母（打完可以再打一次）";
+      else hud = "由左到右打出中間的字母（時間內可以重複打）";
     }
     hudEl.textContent = hud;
     hudEl.hidden = !hud;
