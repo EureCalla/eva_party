@@ -40,6 +40,11 @@
       <canvas id="wall-sign" width="400" height="176"></canvas>
       <ol id="stage-bar" aria-label="活動進度"></ol>
       <p id="wall-hint">猜猜哪個是你的禮物？</p>
+      <!-- 寫好禮物描述後：交換禮物規則（公布標籤、交換禮物）、小遊戲試玩（只在公布標籤） -->
+      <div id="wall-actions" hidden>
+        <button id="xr-btn" type="button" class="pixel-btn big-act">交換禮物規則</button>
+        <button id="practice-btn" type="button" class="pixel-btn big-act play">小遊戲試玩</button>
+      </div>
     </header>
     <div id="gifts"></div>
   </section>
@@ -159,6 +164,14 @@
     </form>
   </div>
 
+  <!-- 交換禮物規則（內容在 exchange_rules.js，試玩大廳共用） -->
+  <div id="xr" class="overlay" hidden>
+    <div class="card xr-card">
+      <div id="xr-body"></div>
+      <button id="xr-close" type="button" class="pixel-btn">知道了</button>
+    </div>
+  </div>
+
   <!-- 管理者切換階段時，還有人沒完成：列出名字 -->
   <div id="stage-block" class="overlay" hidden>
     <div class="card">
@@ -178,6 +191,7 @@
   <script src="ep6.js"></script>
   <script src="ep7.js"></script>
   <script src="ep8.js"></script>
+  <script src="exchange_rules.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

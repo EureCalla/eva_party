@@ -201,6 +201,17 @@
 - 網路：每 50ms 回報右鍵按著沒、點了誰（按下／放開／點擊立刻送），0.5 秒沒回報當作放開；吃幾口、吐中、被打以伺服器為準；按左鍵用 `pointerdown`（不等放開），畫布擋掉右鍵選單、座標依縮放換算；觀眾延遲 1.5 秒
 - 程式：`momgame.py`（`MomBattle`）、`static/sandbox/momgame.js`、API `POST /api/minigame/mom`（`hold`、`spits`、`seq`）
 
+## 2-9. 試玩大廳與交換禮物規則（2026-11-16）
+
+- **開放條件**：只在「公布標籤」階段，且自己認領的禮物已寫好描述；禮物牆上方出現兩顆按鈕
+  - 「交換禮物規則」：公布標籤、交換禮物遊戲兩階段都顯示，內容在 `static/exchange_rules.js`（禮物牆與大廳共用）
+  - 「小遊戲試玩」：只在公布標籤顯示，sessionStorage 交棒 token 到 `/practice.html`（讀完即刪，重新整理要從禮物牆再進來；「回禮物牆」把 token 交回首頁）
+- **大廳**：五款小遊戲各一張卡 → 規則頁 → 按「開始遊戲」，倒數 3 秒（`cms.PRACTICE_PREP_SEC`）就開打，自己＋3 個電腦（`cms.PRACTICE_BOTS`）；結束後「再玩一次」「回大廳」
+- **對局只在伺服器記憶體**（`GameDB.practice`，每人一局，再開覆蓋），不寫 DB、不影響券與禮物；切換階段（登出所有人）時清空
+- **電腦**（各引擎 `bots` 參數，正式交換禮物預設 0，報數遊戲維持 2）：id 為負數、roster 帶 `bot`、`winner` 跳過電腦；有電腦時真人全部淘汰就提早結束。難度普通、偶爾失誤，常數在各引擎檔頂 `BOT_*`
+- **畫面**：對戰直接重用 `static/sandbox/*game.js` 五個模組；`practice.js` 的 bridge 把 `/api/minigame/{input,count,climb,spell,mom}` 改打 `/api/practice/minigame/...`，每 250ms 拉 `/api/practice/state`（格式同 `exchange_state().round`）
+- API：`POST /api/practice/start {kind}`、`GET /api/practice/state`、`POST /api/practice/minigame/*`；錯誤 401 未登入、409 `not_open`／`no_description`、400 `invalid`
+
 ## 3. 待討論
 
 - [x] 抽獎順序怎麼決定 → 隨機，見 2-1

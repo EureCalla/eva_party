@@ -464,6 +464,54 @@
     return DESCRIBE_STAGES.includes(stage) && !!(me && me.gift_id);
   }
 
+  // ---------- 寫好禮物描述後：交換禮物規則、小遊戲試玩 ----------
+  const RULES_STAGES = ["reveal", "exchange"];
+  const PRACTICE_STAGE = "reveal";
+  const PRACTICE_HANDOFF = "practice_handoff_token"; // 交給試玩大廳（讀完即刪）
+  const HOME_HANDOFF = "home_handoff_token"; // 試玩大廳交回來
+  const actionsEl = document.getElementById("wall-actions");
+  const xrEl = document.getElementById("xr");
+  document.getElementById("xr-body").innerHTML = window.ExchangeRules.html;
+  function updateActions() {
+    const described = !!(me && me.description);
+    const showRules = described && RULES_STAGES.includes(stage);
+    const showPractice = described && stage === PRACTICE_STAGE;
+    actionsEl.hidden = !(showRules || showPractice);
+    document.getElementById("xr-btn").hidden = !showRules;
+    document.getElementById("practice-btn").hidden = !showPractice;
+  }
+  document.getElementById("xr-btn").addEventListener("click", () => (xrEl.hidden = false));
+  document.getElementById("xr-close").addEventListener("click", () => (xrEl.hidden = true));
+  xrEl.addEventListener("click", (e) => {
+    if (e.target === xrEl) xrEl.hidden = true;
+  });
+  document.getElementById("practice-btn").addEventListener("click", () => {
+    try {
+      sessionStorage.setItem(PRACTICE_HANDOFF, token());
+    } catch (e) {
+      /* 拿不到 storage：大廳那邊會請他重新登入 */
+    }
+    location.href = "/practice.html";
+  });
+  // 從試玩大廳回來：接手登入 token，讀完即刪；失效就照常從邀請函開始
+  async function takeHomeHandoff() {
+    let tk = null;
+    try {
+      tk = sessionStorage.getItem(HOME_HANDOFF);
+      sessionStorage.removeItem(HOME_HANDOFF);
+    } catch (e) {
+      /* 沒有 storage 就照常 */
+    }
+    if (!tk) return;
+    saveToken(tk);
+    const s = await api("/api/state");
+    if (!s.ok || !s.data.me) {
+      saveToken(null);
+      return;
+    }
+    enterWall(s.data);
+  }
+
   function updateHint() {
     const seating = stage === "seating";
     wallEl.classList.toggle("locked", !seating);
@@ -514,6 +562,7 @@
       if (!g.claimed) drawGift(tile.ctx, "rest", g.label);
     });
     updateHint();
+    updateActions();
     if (!wallEl.hidden) promptDescription();
   }
 
@@ -574,6 +623,7 @@
     closeDesc();
     document.getElementById("admin").hidden = true;
     pwEl.hidden = true;
+    xrEl.hidden = true;
     show("login");
     if (msg) {
       loginErr.textContent = msg;
@@ -967,4 +1017,5 @@
   // ---------- 開場 ----------
   show("intro");
   requestAnimationFrame(sceneFrame);
+  takeHomeHandoff();
 })();

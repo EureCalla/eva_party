@@ -14,6 +14,10 @@ from models import DESCRIPTION_MAX, GameDB
 # 還沒改暗號（公布標籤起的一般人）也能打的 API；其餘一律回 403 must_change
 # 小遊戲 API 每秒很多次、且沒改暗號的人進不了爭奪，不在這裡多查一次 DB
 PASSWORD_GATE_FREE = ("/api/roster", "/api/login", "/api/password")
+# 每秒很多次的 API 不寫 log
+QUIET_PREFIXES = ("/api/minigame/", "/api/practice/minigame/", "/api/practice/state")
+PRACTICE_PREFIX = "/api/practice/minigame/"  # 試玩大廳的小遊戲操作：跟正式同一套解析，只是改操作自己的試玩局
+PRACTICE_STATUS = {"ok": 200, "unknown": 401, "invalid": 400, "not_open": 409, "no_description": 409}
 
 
 class GameHandler(SimpleHTTPRequestHandler):
@@ -35,7 +39,7 @@ class GameHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, format: str, *args: Any) -> None:
         """Only log API calls, not every static file nor the minigame's many-per-second calls."""
-        if self.path.startswith("/api/") and not self.path.startswith("/api/minigame/"):
+        if self.path.startswith("/api/") and not self.path.startswith(QUIET_PREFIXES):
             print(f"[server] {self.command} {self.path} {args[1] if len(args) > 1 else ''}")
 
     def send_json(self, data: Any, status: int = 200) -> None:
@@ -59,7 +63,10 @@ class GameHandler(SimpleHTTPRequestHandler):
     def password_gate(self) -> bool:
         """Answer 403 must_change and return True when the caller must set their own password first."""
         path = urlsplit(self.path).path
-        if not path.startswith("/api/") or path in PASSWORD_GATE_FREE or path.startswith("/api/minigame/"):
+        if (
+            not path.startswith("/api/") or path in PASSWORD_GATE_FREE
+            or path.startswith("/api/minigame/") or path.startswith(PRACTICE_PREFIX)
+        ):
             return False
         if not self.db.must_change_password(self.headers.get("X-Token")):
             return False
@@ -85,6 +92,9 @@ class GameHandler(SimpleHTTPRequestHandler):
             self.send_json(data)
         elif self.path == "/api/exchange":
             self.send_json(self.db.exchange_state(self.headers.get("X-Token")))
+        elif self.path == "/api/practice/state":
+            result, data = self.db.practice_state(self.headers.get("X-Token", ""))
+            self.send_json(data if data is not None else {"result": result}, PRACTICE_STATUS[result])
         elif self.path == "/api/minigame/map":
             self.send_json(map_info())
         elif self.path.startswith("/api/minigame/watch"):
@@ -172,6 +182,8 @@ class GameHandler(SimpleHTTPRequestHandler):
         data = self.read_json()
         if self.password_gate():
             return
+        practice = self.path.startswith(PRACTICE_PREFIX)
+        path = "/api/minigame/" + self.path[len(PRACTICE_PREFIX):] if practice else self.path
         if self.path == "/api/login":
             token = self.db.login(str(data.get("name", "")), str(data.get("password", "")))
             if token is None:
@@ -184,6 +196,9 @@ class GameHandler(SimpleHTTPRequestHandler):
             )
             status = {"ok": 200, "unknown": 401, "empty": 400, "mismatch": 400}[result]
             self.send_json({"result": result}, status)
+        elif self.path == "/api/practice/start":
+            result = self.db.practice_start(self.headers.get("X-Token", ""), str(data.get("kind", "")))
+            self.send_json({"result": result}, PRACTICE_STATUS[result])
         elif self.path == "/api/guess":
             try:
                 gift_id = int(data.get("gift_id"))
@@ -205,7 +220,7 @@ class GameHandler(SimpleHTTPRequestHandler):
             join = self.path.endswith("/join")
             result = self.db.join_contest(token) if join else self.db.withdraw_contest(token)
             self.send_json({"result": result}, {"ok": 200, "unknown": 401}.get(result, 409))
-        elif self.path == "/api/minigame/input":
+        elif path == "/api/minigame/input":
             try:
                 x, y = float(data.get("x")), float(data.get("y"))
                 fx, fy = int(data.get("fx", 0)), int(data.get("fy", 0))
@@ -215,23 +230,23 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "x / y / fx / fy / seq / power 格式不對"}, 400)
                 return
             result, snap = self.db.minigame_input(
-                self.headers.get("X-Token", ""), x, y, fx, fy, bool(data.get("throw")), seq, power
+                self.headers.get("X-Token", ""), x, y, fx, fy, bool(data.get("throw")), seq, power, practice=practice
             )
             if snap is not None:
                 self.send_json(snap)
             else:
                 self.send_json({"result": result}, 401 if result == "unknown" else 409)
-        elif self.path == "/api/minigame/count":
+        elif path == "/api/minigame/count":
             n = data.get("n")
             if n is not None and (not isinstance(n, int) or isinstance(n, bool) or not 1 <= n <= 9):
                 self.send_json({"error": "n 要是 1~9 或 null"}, 400)
                 return
-            result, snap = self.db.minigame_count(self.headers.get("X-Token", ""), n)
+            result, snap = self.db.minigame_count(self.headers.get("X-Token", ""), n, practice=practice)
             if snap is not None:
                 self.send_json(snap)
             else:
                 self.send_json({"result": result}, 401 if result == "unknown" else 409)
-        elif self.path == "/api/minigame/mom":
+        elif path == "/api/minigame/mom":
             spits = data.get("spits", [])
             seq = data.get("seq")
             if (
@@ -241,12 +256,14 @@ class GameHandler(SimpleHTTPRequestHandler):
             ):
                 self.send_json({"error": "spits 要是最多 10 個整數、seq 要是整數"}, 400)
                 return
-            result, snap = self.db.minigame_mom(self.headers.get("X-Token", ""), bool(data.get("hold")), spits, seq)
+            result, snap = self.db.minigame_mom(
+                self.headers.get("X-Token", ""), bool(data.get("hold")), spits, seq, practice=practice
+            )
             if snap is not None:
                 self.send_json(snap)
             else:
                 self.send_json({"result": result}, 401 if result == "unknown" else 409)
-        elif self.path == "/api/minigame/spell":
+        elif path == "/api/minigame/spell":
             word, keys, start = data.get("word"), data.get("keys", ""), data.get("from")
             if any(v is not None and (not isinstance(v, int) or isinstance(v, bool)) for v in (word, start)):
                 self.send_json({"error": "word / from 要是整數或 null"}, 400)
@@ -254,12 +271,12 @@ class GameHandler(SimpleHTTPRequestHandler):
             if not isinstance(keys, str) or len(keys) > 20 or any(c not in "abcdefghijklmnopqrstuvwxyz" for c in keys):
                 self.send_json({"error": "keys 只能是 a～z，最多 20 個字"}, 400)
                 return
-            result, snap = self.db.minigame_spell(self.headers.get("X-Token", ""), word, keys, start)
+            result, snap = self.db.minigame_spell(self.headers.get("X-Token", ""), word, keys, start, practice=practice)
             if snap is not None:
                 self.send_json(snap)
             else:
                 self.send_json({"result": result}, 401 if result == "unknown" else 409)
-        elif self.path == "/api/minigame/climb":
+        elif path == "/api/minigame/climb":
             try:
                 x, y, vy = float(data.get("x")), float(data.get("y")), float(data.get("vy", 0))
                 face, move = int(data.get("face", 1)), int(data.get("move", 0))
@@ -270,7 +287,8 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "x / y / vy / face / move / seq / have / kick_ack / land 格式不對"}, 400)
                 return
             result, snap = self.db.minigame_climb(
-                self.headers.get("X-Token", ""), x, y, vy, bool(data.get("grounded")), face, move, seq, have, kick_ack, land
+                self.headers.get("X-Token", ""), x, y, vy, bool(data.get("grounded")), face, move, seq, have, kick_ack, land,
+                practice=practice,
             )
             if snap is not None:
                 self.send_json(snap)

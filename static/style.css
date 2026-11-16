@@ -131,6 +131,27 @@ body.scene-cover #scene { object-fit: cover; }
   font-size: clamp(1rem, 4vw, 1.4rem);
   letter-spacing: 0.08em;
 }
+/* 寫好禮物描述後出現的兩顆大按鈕 */
+#wall-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin: 0 0 18px;
+}
+#wall-actions[hidden] { display: none; }
+.pixel-btn.big-act { font-size: clamp(1rem, 3.6vw, 1.3rem); padding: 0.7em 1.4em; animation: act-bob 1.6s steps(2) infinite; }
+.pixel-btn.big-act.play { background: var(--blue); animation-delay: 0.8s; }
+@keyframes act-bob { 50% { transform: translateY(-3px); } }
+/* 交換禮物規則卡（試玩大廳也用） */
+.xr-card { width: min(640px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; }
+#xr { align-items: flex-start; overflow-y: auto; }
+#xr .xr-card { margin: auto 0; }
+.xr-list, .xr-games { margin: 0; padding-left: 1.4em; font-size: 0.95rem; line-height: 1.6; }
+.xr-list li + li { margin-top: 6px; }
+.xr-list b, .xr-games b { color: var(--pink); }
+.xr-sub { margin: 4px 0 0; font-size: 1rem; color: var(--blue); }
+.xr-note { margin: 0; font-size: 0.85rem; text-align: center; opacity: 0.85; }
 #gifts {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

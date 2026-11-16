@@ -17,6 +17,8 @@ import threading
 from collections import deque
 from typing import Any
 
+from countgame import BOT_NAMES
+
 DT = 0.05  # 模擬步長（秒）
 WORD_EVERY = 5.0  # 每幾秒換一組字母
 WORD_LEN = 5  # 每組幾個字母
@@ -26,20 +28,27 @@ HP = 10  # 每人血量
 FRAME_EVERY = 0.1  # 直播緩衝每幾秒存一格
 FRAME_KEEP = 4.0  # 直播緩衝保留幾秒
 RECENT_KEEP = 3.0  # 畫面裡帶最近幾秒的射線與事件
+# 電腦玩家（試玩大廳用，難度普通、偶爾失誤）
+BOT_KEY_SEC = (0.5, 0.9)  # 電腦每打一個字母的間隔（秒，隨機）
+BOT_TYPO = 0.06  # 電腦每個字母打錯的機率（打錯照規則反噬扣血、進度歸零）
+BOT_REACT = (0.8, 1.4)  # 新一組字母出現後，電腦隔多久才開始打（秒，隨機）
 
 
 class SpellBattle:
     """One typing-spell match: ``prep_sec`` to read the rules, then at most ``play_sec`` of casting.
 
     Times are epoch seconds. ``finished_at`` is set when time runs out or at
-    most one player is left; ``ranking`` and ``winner`` are then final.
+    most one player is left (with computer players: also when no real player
+    is left); ``ranking`` and ``winner`` are then final. Computer players
+    (``bots``, for the practice lobby) get negative ids and type through the
+    same rules as everyone else; they never win.
     """
 
     def __init__(
         self, players: list[dict[str, Any]], prep_epoch: float, prep_sec: float, play_sec: float,
-        rng: random.Random | None = None,
+        rng: random.Random | None = None, *, bots: int = 0,
     ) -> None:
-        """Stand ``players`` ([{id, name, label}]) in a circle and draw every set of letters up front."""
+        """Stand ``players`` ([{id, name, label}]) and ``bots`` computer players in a circle; draw every set of letters up front."""
         self.rng = rng or random.SystemRandom()
         self.lock = threading.Lock()
         self.play_start = prep_epoch + prep_sec
@@ -47,14 +56,17 @@ class SpellBattle:
         self.t = self.play_start  # 模擬時間
         self.finished_at: float | None = None
         self.ranking: list[dict[str, Any]] | None = None
-        self.roster = [{"id": p["id"], "name": p["name"], "label": p.get("label")} for p in players]
+        self.bots = bots
+        self.roster = [{"id": p["id"], "name": p["name"], "label": p.get("label"), "bot": False} for p in players]
+        self.roster += [{"id": -(i + 1), "name": BOT_NAMES[i % len(BOT_NAMES)], "label": None, "bot": True} for i in range(bots)]
         self.players: dict[int, dict[str, Any]] = {
-            p["id"]: {
-                "id": p["id"], "hp": HP, "alive": True, "out_at": None,
+            r["id"]: {
+                "id": r["id"], "hp": HP, "alive": True, "out_at": None,
                 "word": -1, "progress": 0, "started": None, "casts": 0, "last_speed": None,
                 "typed": 0,  # 按鍵流水號：已經處理到第幾個按鍵（重送的跳過）
+                "bot": r["bot"], "next_key": None,  # 電腦：下一次打字的時間
             }
-            for p in players
+            for r in self.roster
         }
         self.n_words = max(1, int(play_sec // WORD_EVERY))
         self.words = ["".join(self.rng.choice(string.ascii_lowercase) for _ in range(WORD_LEN)) for _ in range(self.n_words)]
@@ -106,14 +118,38 @@ class SpellBattle:
                 self._finish(self.play_end)
 
     def _step(self) -> None:
-        """Advance one fixed step: rays that arrived hit, early end, live frames."""
+        """Advance one fixed step: rays that arrived hit, computer players type, early end, live frames."""
         self.t += DT
         self._land(self.t)
+        if self.bots:
+            self._bots_type(self.t)
         if self.t >= self.next_frame:
             self.next_frame += FRAME_EVERY
             self.frames.append(self._frame())
             while self.frames and self.frames[0]["t"] < self.t - FRAME_KEEP:
                 self.frames.popleft()
+
+    def _bots_type(self, at: float) -> None:
+        """Computer players whose moment has come type one letter (now and then a wrong one), like a real key."""
+        n = self.word_index(at)
+        if n is None:
+            return
+        for p in self.players.values():
+            if self.finished_at is not None:
+                return
+            if not p["bot"] or not p["alive"]:
+                continue
+            if p["word"] != n:
+                # 新的一組字母：進度清空，看一下再開始打
+                self._sync_word(p, n)
+                p["next_key"] = self.word_start(n) + self.rng.uniform(*BOT_REACT)
+            if at < p["next_key"]:
+                continue
+            ch = self.words[n][p["progress"]]
+            if self.rng.random() < BOT_TYPO:
+                ch = self.rng.choice([c for c in string.ascii_lowercase if c != ch])
+            self._key(p, n, ch, at)
+            p["next_key"] = at + self.rng.uniform(*BOT_KEY_SEC)
 
     def _land(self, at: float) -> None:
         """Rays that arrived by ``at`` and were not cancelled hit their target (if still in)."""
@@ -147,8 +183,11 @@ class SpellBattle:
             self.events.popleft()
 
     def _check_end(self, at: float) -> None:
-        """End early when at most one player is left."""
-        if self.finished_at is None and sum(1 for p in self.players.values() if p["alive"]) <= 1:
+        """End early when at most one player is left (with computer players: or no real player is left)."""
+        if self.finished_at is not None:
+            return
+        alive = [p for p in self.players.values() if p["alive"]]
+        if len(alive) <= 1 or (self.bots and not any(not p["bot"] for p in alive)):
             self._finish(at)
 
     def _finish(self, at: float) -> None:
@@ -172,8 +211,10 @@ class SpellBattle:
 
     @property
     def winner(self) -> int | None:
-        """Return the winner's player id once the match is over."""
-        return self.ranking[0]["id"] if self.ranking else None
+        """Return the best real player's id once the match is over (computers cannot win)."""
+        if not self.ranking:
+            return None
+        return next((r["id"] for r in self.ranking if not self.players[r["id"]]["bot"]), None)
 
     # ---------- 打字與詠唱 ----------
 
@@ -188,12 +229,12 @@ class SpellBattle:
         twice. The snapshot carries ``results`` (one of ok / wrong / cast /
         dup / ignored per key) and ``typed`` (how many keys have been handled).
         Keys for an older set are ignored without penalty. Returns None when
-        ``pid`` is not in this match.
+        ``pid`` is not a real player in this match.
         """
         with self.lock:
             self._advance(now)
             p = self.players.get(pid)
-            if p is None:
+            if p is None or p["bot"]:
                 return None
             results: list[str] = []
             if keys and start is not None:

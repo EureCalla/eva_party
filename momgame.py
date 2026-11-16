@@ -15,6 +15,8 @@ import threading
 from collections import deque
 from typing import Any
 
+from countgame import BOT_NAMES
+
 DT = 0.05  # 模擬步長（秒）
 BITES = 5  # 吃幾口嘴裡才滿（5 顆籽）
 BITE_SEC = 0.4  # 長按右鍵每幾秒吃一口（2 秒吃滿）
@@ -28,20 +30,28 @@ HOLD_STALE = 0.5  # 這麼久沒收到回報就當作放開右鍵
 FRAME_EVERY = 0.1  # 直播緩衝每幾秒存一格
 FRAME_KEEP = 4.0  # 直播緩衝保留幾秒
 RECENT_KEEP = 3.0  # 畫面裡帶最近幾秒的籽與事件
+# 電腦玩家（試玩大廳用，難度普通、偶爾失誤）
+BOT_REACT = (0.3, 0.8)  # 媽媽閉眼後，電腦隔多久才開始動（秒，隨機）
+BOT_SAFE_SEC = 3.0  # 閉眼這麼久以內媽媽不可能睜眼，電腦放心吃／吐
+BOT_GREEDY = 0.8  # 閉眼超過 BOT_SAFE_SEC 後，每一口／每一顆仍貪心繼續的機率（否則停手等下一輪閉眼）
+BOT_SPIT_GAP = (0.4, 0.9)  # 電腦吐籽的間隔（秒，隨機）
 
 
 class MomBattle:
     """One match: ``prep_sec`` to read the rules, then at most ``play_sec`` of eating and spitting.
 
     Times are epoch seconds. ``finished_at`` is set when time runs out or at
-    most one player is left; ``ranking`` and ``winner`` are then final.
+    most one player is left (with computer players: also when no real player
+    is left); ``ranking`` and ``winner`` are then final. Computer players
+    (``bots``, for the practice lobby) get negative ids and hold / release /
+    spit through the same rules as everyone else; they never win.
     """
 
     def __init__(
         self, players: list[dict[str, Any]], prep_epoch: float, prep_sec: float, play_sec: float,
-        rng: random.Random | None = None,
+        rng: random.Random | None = None, *, bots: int = 0,
     ) -> None:
-        """Seat ``players`` ([{id, name, label}]) around the table and plan when Mom opens her eyes."""
+        """Seat ``players`` ([{id, name, label}]) and ``bots`` computer players around the table; plan Mom's eyes."""
         self.rng = rng or random.SystemRandom()
         self.lock = threading.Lock()
         self.play_start = prep_epoch + prep_sec
@@ -49,13 +59,18 @@ class MomBattle:
         self.t = self.play_start  # 模擬時間
         self.finished_at: float | None = None
         self.ranking: list[dict[str, Any]] | None = None
-        self.roster = [{"id": p["id"], "name": p["name"], "label": p.get("label")} for p in players]
+        self.bots = bots
+        self.roster = [{"id": p["id"], "name": p["name"], "label": p.get("label"), "bot": False} for p in players]
+        self.roster += [{"id": -(i + 1), "name": BOT_NAMES[i % len(BOT_NAMES)], "label": None, "bot": True} for i in range(bots)]
         self.players: dict[int, dict[str, Any]] = {
-            p["id"]: {
-                "id": p["id"], "hp": HP, "alive": True, "out_at": None, "mode": "eat", "bites": 0, "seeds": 0,
+            r["id"]: {
+                "id": r["id"], "hp": HP, "alive": True, "out_at": None, "mode": "eat", "bites": 0, "seeds": 0,
                 "holding": False, "hold_seen": 0.0, "next_bite": 0.0, "act_until": 0.0, "seq": -1,
+                # 電腦用：這段閉眼的開始時間、何時開始動、這段閉眼是否已停手、上次擲骰的那一口、上次看到的模式、下次吐籽時間
+                "bot": r["bot"], "b_seg": None, "b_go": 0.0, "b_rest": False, "b_roll": None, "b_mode": "eat",
+                "b_spit": 0.0,
             }
-            for p in players
+            for r in self.roster
         }
         # 媽媽時間表：[開始, 結束, 是否睜眼]，一開始閉眼
         self.mom: list[tuple[float, float, bool]] = []
@@ -116,6 +131,8 @@ class MomBattle:
         """Advance one fixed step: bites while holding, seeds landing, Mom slapping, early end, live frames."""
         self.t += DT
         t = self.t
+        if self.bots:
+            self._bots_act(t)
         for p in self.players.values():
             if not p["alive"]:
                 continue
@@ -138,6 +155,60 @@ class MomBattle:
             self.frames.append(self._frame())
             while self.frames and self.frames[0]["t"] < t - FRAME_KEEP:
                 self.frames.popleft()
+
+    def _bots_act(self, t: float) -> None:
+        """Computer players press / release the right button and spit, the same way a report would.
+
+        They only look at what a player can see: whether Mom's eyes are open
+        and how long she has been praying. Eyes open: let go at once (the
+        grace after opening covers it). Eyes shut: wait a moment, then eat
+        until the mouth is full and spit seeds at random opponents. Once she
+        has prayed BOT_SAFE_SEC, every further bite or seed is a gamble that
+        only goes ahead with probability BOT_GREEDY (otherwise they stop until
+        she next shuts her eyes), so now and then one gets slapped.
+        """
+        start, _end, is_open = self.mom_segment(t)
+        for p in self.players.values():
+            if not p["bot"] or not p["alive"]:
+                continue
+            if is_open:
+                p["holding"] = False  # 看到媽媽睜眼立刻放開右鍵
+                continue
+            if p["b_seg"] != start:  # 新的一段閉眼：重新反應、解除停手
+                p["b_seg"], p["b_rest"], p["b_roll"] = start, False, None
+                p["b_go"] = start + self.rng.uniform(*BOT_REACT)
+            if p["b_rest"] or t < p["b_go"]:
+                continue
+            risky = t - start >= BOT_SAFE_SEC
+            if p["mode"] != p["b_mode"]:
+                p["b_mode"] = p["mode"]
+                if p["mode"] == "spit":  # 剛吃滿：隔一下再吐
+                    p["b_spit"] = t + self.rng.uniform(*BOT_SPIT_GAP)
+            if p["mode"] == "eat":
+                if not p["holding"]:
+                    if risky and self.rng.random() >= BOT_GREEDY:
+                        p["b_rest"] = True
+                        continue
+                    p["holding"], p["hold_seen"] = True, t
+                    p["next_bite"] = t + BITE_SEC  # 和真人一樣：按下去 0.4 秒後吃第一口
+                    p["b_roll"] = p["next_bite"]  # 按下去那次已經擲過骰
+                    continue
+                p["hold_seen"] = t
+                if risky and p["b_roll"] != p["next_bite"]:
+                    p["b_roll"] = p["next_bite"]  # 每一口擲一次
+                    if self.rng.random() >= BOT_GREEDY:
+                        p["holding"], p["b_rest"] = False, True
+                continue
+            p["holding"] = False  # 吐的階段：放開右鍵
+            if t < max(p["b_spit"], p["b_go"]):
+                continue
+            if risky and self.rng.random() >= BOT_GREEDY:
+                p["b_rest"] = True
+                continue
+            targets = [q["id"] for q in self.players.values() if q is not p and q["alive"]]
+            if targets:
+                self._spit(p, self.rng.choice(targets), t)
+            p["b_spit"] = t + self.rng.uniform(*BOT_SPIT_GAP)
 
     def _land(self, at: float) -> None:
         """Seeds that arrived by ``at`` hit their target (if still in): one HP each."""
@@ -174,8 +245,11 @@ class MomBattle:
             self.events.popleft()
 
     def _check_end(self, at: float) -> None:
-        """End early when at most one player is left."""
-        if self.finished_at is None and sum(1 for p in self.players.values() if p["alive"]) <= 1:
+        """End early when at most one player is left (with computer players: or no real player is left)."""
+        if self.finished_at is not None:
+            return
+        alive = [p for p in self.players.values() if p["alive"]]
+        if len(alive) <= 1 or (self.bots and not any(not p["bot"] for p in alive)):
             self._finish(at)
 
     @staticmethod
@@ -205,8 +279,10 @@ class MomBattle:
 
     @property
     def winner(self) -> int | None:
-        """Return the winner's player id once the match is over."""
-        return self.ranking[0]["id"] if self.ranking else None
+        """Return the best real player's id once the match is over (computers cannot win)."""
+        if not self.ranking:
+            return None
+        return next((r["id"] for r in self.ranking if not self.players[r["id"]]["bot"]), None)
 
     # ---------- 玩家操作 ----------
 
@@ -217,12 +293,12 @@ class MomBattle:
 
         Reports carry an increasing ``seq``; an older one is ignored. The
         snapshot carries ``spat`` (how many of ``spits`` were spat). Returns
-        None when ``pid`` is not in this match.
+        None when ``pid`` is not a real player in this match.
         """
         with self.lock:
             self._advance(now)
             p = self.players.get(pid)
-            if p is None:
+            if p is None or p["bot"]:
                 return None
             spat = 0
             if self.phase(now) == "play" and p["alive"] and (seq is None or seq > p["seq"]):

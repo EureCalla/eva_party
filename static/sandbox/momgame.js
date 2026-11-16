@@ -105,7 +105,7 @@
   function sync(b, game, gift) {
     bridge = b;
     rnd = game && game.round;
-    giftName = gift ? gift.animal + "的禮物" : "禮物";
+    giftName = gift ? gift.title || gift.animal + "的禮物" : "禮物"; // 試玩大廳傳 title（例如「第一名」）
     meName = game && game.me ? game.me.name : null;
     const phase = rnd && rnd.phase;
     if (!phase || phase === "contest") {
