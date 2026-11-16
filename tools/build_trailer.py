@@ -24,6 +24,7 @@ EPISODES = [
     (5, "第五集", "ep5.html", "ep5.js"),
     (6, "第六集", "ep6.html", "ep6.js"),
     (7, "第七集", "ep7.html", "ep7.js"),
+    (8, "大結局", "ep8.html", "ep8.js"),
 ]
 
 

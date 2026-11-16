@@ -1,0 +1,1555 @@
+// 預告片大結局：由 tools/build_trailer.py 從 video/compositions/ep8.html 產生，請勿手改
+// 角色零件沿用 sprites.js 的 SPRITES / PAL；登記到 window.EPISODES = [{ no, title, render(t), duration }]
+(function () {
+      // 下方 SPRITES 區塊由 video/design/export_pieces.py 自動產生
+      
+
+      // 大結局：小貓帶全部朋友走進派對會場 → 吃大餐、交換禮物、玩遊戲的照片一張張疊上來，越翻越快
+      // → 大家心滿意足，山羊終於把頭從綿羊毛裡拔出來、摔得四腳朝天，Eva 的名牌趁機從羊毛裡飛出來掛到小貓身上→ 預祝 Eva 順風順產，小貓開心到熱淚盈眶
+      // → 大合照（小貓、小白兔轉正面）倒數 3、2、1，閃光後變成一張照片 → Eva 背對鏡頭拿著這張照片，旁邊多了一隻小小貓
+      // → 片尾演員表、導演 Callami01、感謝 VR20 大家共襄盛舉
+      const DUR = 62;
+      const P = 15; // 一格 = 15 px（畫面 128 x 72 格）
+      const GH = 72;
+      const GROUND = 63;
+      const FRONT = GROUND + 5;
+      const out = document.getElementById("trailer-canvas");
+      const ctx = out.getContext("2d");
+
+      // 各段的時間
+      const A_END = 9.0; // 走進會場
+      const B0 = A_END; // 照片蒙太奇
+      const PHOTO_D = [1.45, 1.15, 0.95, 0.8, 0.68, 0.58, 0.5, 0.43, 0.37, 0.32, 0.28, 0.25, 0.22, 0.2];
+      const PHOTO_AT = [];
+      PHOTO_D.reduce((acc, d) => (PHOTO_AT.push(acc), acc + d), B0 + 0.35);
+      const B_END = PHOTO_AT[PHOTO_AT.length - 1] + PHOTO_D[PHOTO_D.length - 1] + 0.9;
+      const C0 = B_END; // 心滿意足、掛名牌、預祝
+      const TOSS = C0 + 2.6; // 山羊把頭拔出來，名牌從羊毛裡飛出來
+      const TOSS_HIT = TOSS + 0.75;
+      const WISH = TOSS_HIT + 1.9;
+      const D0 = WISH + 3.0; // 熱淚盈眶
+      const E0 = D0 + 4.2; // 大合照
+      const COUNT = E0 + 1.6; // 倒數 3、2、1
+      const SNAP = COUNT + 3.0;
+      const F0 = SNAP; // 照片在 Eva 手上
+      const G0 = F0 + 10.0; // 片尾名單
+
+      // ---------- 零件轉成小畫布（1 格 = 1 px），另做一份投影 ----------
+      const SPR = {};
+      Object.keys(SPRITES).forEach((name) => {
+        const p = SPRITES[name];
+        const h = p.rows.length;
+        const w = p.rows[0].length;
+        const c = document.createElement("canvas");
+        const sh = document.createElement("canvas");
+        c.width = sh.width = w;
+        c.height = sh.height = h;
+        const x = c.getContext("2d");
+        const xs = sh.getContext("2d");
+        xs.fillStyle = "#000";
+        p.rows.forEach((row, j) => {
+          for (let i = 0; i < w; i++) {
+            const ch = row[i];
+            if (ch === ".") continue;
+            x.fillStyle = PAL[ch];
+            x.fillRect(i, j, 1, 1);
+            xs.fillRect(i, j, 1, 1);
+          }
+        });
+        const unit = p.unit || 1;
+        SPR[name] = { c, sh, w: w * unit, h: h * unit, x0: p.x0, y0: p.y0, px: p.pivot[0], py: p.pivot[1], unit, fine: !!p.fine };
+      });
+
+      // ---------- 數學工具 ----------
+      const E = {
+        lin: (p) => p,
+        io: (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2),
+        out: (p) => 1 - Math.pow(1 - p, 3),
+        in: (p) => p * p * p,
+        back: (p) => {
+          const c1 = 2.4;
+          return 1 + (c1 + 1) * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+        },
+      };
+      function tw(t, t0, t1, a, b, e) {
+        if (t <= t0) return a;
+        if (t >= t1) return b;
+        return a + (b - a) * E[e || "io"]((t - t0) / (t1 - t0));
+      }
+      function path(t, keys) {
+        if (t <= keys[0][0]) return keys[0][1];
+        for (let i = 1; i < keys.length; i++) {
+          if (t <= keys[i][0]) return tw(t, keys[i - 1][0], keys[i][0], keys[i - 1][1], keys[i][1], keys[i][2]);
+        }
+        return keys[keys.length - 1][1];
+      }
+      function hash(a, b, c) {
+        let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263) + Math.imul(c | 0, 1274126177)) | 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+      }
+      function pop(t, t0, amp, dur) {
+        if (t < t0 || t > t0 + dur) return 0;
+        const u = (t - t0) / dur;
+        return amp * Math.sin(u * Math.PI * 2.5) * (1 - u);
+      }
+      function jump(t, t0, dur, h) {
+        if (t < t0 || t > t0 + dur) return 0;
+        return Math.sin(((t - t0) / dur) * Math.PI) * h;
+      }
+
+      // ---------- 紙片零件繪製（座標單位：格） ----------
+      function piece(name, rot, opt) {
+        const s = SPR[name];
+        opt = opt || {};
+        const ax = opt.ax !== undefined ? opt.ax : s.px;
+        const ay = opt.ay !== undefined ? opt.ay : s.py;
+        ctx.save();
+        ctx.translate(ax + (opt.dx || 0), ay + (opt.dy || 0));
+        if (rot) ctx.rotate(rot);
+        const sc = opt.scale !== undefined ? opt.scale : 1;
+        ctx.scale(sc * (opt.sx !== undefined ? opt.sx : 1), sc);
+        const lx = s.unit === 1 || s.fine ? s.x0 - s.px : -s.w / 2;
+        const ly = s.unit === 1 || s.fine ? s.y0 - s.py : -s.h / 2;
+        ctx.globalAlpha = 0.28 * (opt.alpha !== undefined ? opt.alpha : 1);
+        ctx.drawImage(s.sh, lx + 0.35, ly + 0.35, s.w, s.h);
+        ctx.globalAlpha = opt.alpha !== undefined ? opt.alpha : 1;
+        ctx.drawImage(s.c, lx, ly, s.w, s.h);
+        ctx.globalAlpha = 1;
+        if (opt.after) opt.after();
+        ctx.restore();
+      }
+
+      // ---------- 小貓（紙娃娃，同第一集；可翻成正面的頭） ----------
+      function drawCat(st) {
+        ctx.save();
+        ctx.translate(st.x, st.y - (st.hop || 0));
+        if (st.flip !== undefined && st.flip !== 1) {
+          ctx.translate(22, 0);
+          ctx.scale(st.flip, 1);
+          ctx.translate(-22, 0);
+        }
+        if (st.view === "front") {
+          piece("f_tail", st.tail || 0);
+          piece("f_body_dress", 0);
+          piece("paw", 0, { ax: st.pawL[0], ay: st.pawL[1] });
+          piece("paw", 0, { ax: st.pawR[0], ay: st.pawR[1] });
+          piece(st.head || "f_head_open_bow", st.headRot || 0);
+          ctx.restore();
+          return;
+        }
+        piece("s_leg_back", st.legB || 0);
+        piece("s_leg_front", st.legF || 0);
+        ctx.save();
+        ctx.translate(19, 28);
+        ctx.rotate(st.rock || 0);
+        ctx.translate(-19, -28);
+        piece("s_tail", st.tail || 0);
+        piece(st.torso || "s_torso_belly_dress", 0);
+        piece(st.head || "s_head_open_bow", st.headRot || 0, { ax: 20, ay: 16, sx: st.headSx !== undefined ? st.headSx : 1 });
+        if (st.afterHead) st.afterHead();
+        piece(st.arm || "s_arm_dress", st.armRot || 0, { after: st.hold });
+        ctx.restore();
+        ctx.restore();
+      }
+      function walkPose(st, ph, amp) {
+        st.legB = Math.sin(ph) * 0.45 * amp;
+        st.legF = -Math.sin(ph) * 0.45 * amp;
+        st.rock = Math.sin(ph * 2) * 0.04 * amp;
+        st.hop = Math.abs(Math.sin(ph)) * 1.2 * amp;
+        st.tail = Math.sin(ph) * 0.15;
+      }
+
+      // ---------- 動物（紙娃娃，同第七集） ----------
+      const RIG = {
+        mk: { w: 16, h: 28, foot: 7, neck: [8, 10] },
+        ot: { w: 18, h: 22, foot: 8, neck: [10, 9] },
+        gf: { w: 30, h: 56, foot: 13, neck: [21, 23] },
+        el: { w: 56, h: 44, foot: 22, neck: [39, 27] },
+        sq: { w: 18, h: 16, foot: 10, neck: [12, 9] },
+        gp: { w: 16, h: 10, foot: 8, neck: [11, 6] },
+        hm: { w: 12, h: 10, foot: 6, neck: [8, 6] },
+        qk: { w: 14, h: 17, foot: 7, neck: [8, 8] },
+        sh: { w: 24, h: 18, foot: 11, neck: [17, 12] },
+        gt: { w: 22, h: 22, foot: 10, neck: [15, 13] },
+        ln: { w: 30, h: 24, foot: 14, neck: [21, 16] },
+        br: { w: 28, h: 22, foot: 12, neck: [19, 14] },
+        rb: { w: 14, h: 26, foot: 7, neck: [8, 16] },
+        fx: { w: 18, h: 30, foot: 8, neck: [10, 13] },
+        yn: { w: 20, h: 16, foot: 9, neck: [14, 10] },
+        dg: { w: 26, h: 22, foot: 11, neck: [19, 12] },
+        sd: { w: 16, h: 20, foot: 8, neck: [8, 15] },
+        ck: { w: 12, h: 12, foot: 6, neck: [7, 7] },
+        pg: { w: 14, h: 18, foot: 7, neck: [8, 8] },
+        cr: { w: 32, h: 50, foot: 14, neck: [19, 27] },
+        ow: { w: 14, h: 16, foot: 7, neck: [7, 10] },
+        cb: { w: 26, h: 18, foot: 11, neck: [17, 10] },
+        pi: { w: 18, h: 14, foot: 8, neck: [12, 9] },
+        fr: { w: 12, h: 10, foot: 5, neck: [6, 7] },
+        sl: { w: 26, h: 20, foot: 12, neck: [17, 11] },
+      };
+      const HEAD_TOP = { mk: [9, 1], ot: [12, 2], gf: [24, 1], el: [38, 8], sq: [13, 2], gp: [12, 2], hm: [9, 2], qk: [9, 1], sh: [20, 3], gt: [8, 8], ln: [24, 2], br: [22, 2], rb: [7, 6], fx: [10, 1], yn: [15, 1], dg: [21, 3], sd: [8, 0], ck: [7, 1], pg: [8, 1], cr: [25, 2], ow: [7, 0], cb: [19, 3], pi: [13, 3], fr: [7, 1], sl: [19, 1] };
+      const EL_HEAD = [36, 22];
+
+      function footOf(st) {
+        const r = RIG[st.kind];
+        return [st.fx !== undefined ? st.fx : st.x + r.foot, (st.fy !== undefined ? st.fy : GROUND) - (st.hop || 0)];
+      }
+      function rigToWorld(st, p) {
+        const r = RIG[st.kind];
+        const f = footOf(st);
+        const dx = (p[0] - r.foot) * (st.sx || 1) * (st.k || 1);
+        const dy = (p[1] - r.h) * (st.sy || 1) * (st.k || 1);
+        const a = st.rot || 0;
+        return [f[0] + dx * Math.cos(a) - dy * Math.sin(a), f[1] + dx * Math.sin(a) + dy * Math.cos(a)];
+      }
+      function rotAbout(p, c, rot) {
+        const dx = p[0] - c[0];
+        const dy = p[1] - c[1];
+        return [c[0] + dx * Math.cos(rot) - dy * Math.sin(rot), c[1] + dx * Math.sin(rot) + dy * Math.cos(rot)];
+      }
+      function drawRig(st, parts) {
+        const r = RIG[st.kind];
+        const f = footOf(st);
+        ctx.save();
+        ctx.translate(f[0], f[1]);
+        if (st.rot) ctx.rotate(st.rot);
+        ctx.scale((st.sx || 1) * (st.k || 1), (st.sy || 1) * (st.k || 1));
+        ctx.translate(-r.foot, -r.h);
+        parts();
+        ctx.restore();
+      }
+      const DRAW = {
+        mk: (st) => {
+          piece("mk_body", 0);
+          piece("mk_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        ot: (st) => {
+          piece("ot_body", 0);
+          piece("ot_head_" + (st.face || "open"), st.headRot || 0);
+          piece("ot_arm", st.armRot || 0);
+        },
+        gf: (st) => {
+          piece("gf_leg_back_far", -(st.leg || 0));
+          piece("gf_leg_front_far", st.leg || 0);
+          piece("gf_body", 0);
+          piece("gf_leg_back", st.leg || 0);
+          piece("gf_leg_front", -(st.leg || 0));
+          piece("gf_neck_" + (st.face || "open"), st.headRot || 0);
+        },
+        el: (st) => {
+          piece("el_leg_back_far", -(st.leg || 0));
+          piece("el_leg_front_far", st.leg || 0);
+          piece("el_body", 0);
+          piece("el_leg_back", st.leg || 0);
+          piece("el_leg_front", -(st.leg || 0));
+          ctx.save();
+          ctx.translate(EL_HEAD[0], EL_HEAD[1]);
+          ctx.rotate(st.headRot || 0);
+          ctx.translate(-EL_HEAD[0], -EL_HEAD[1]);
+          piece("el_head_" + (st.face || "open"), 0);
+          piece("el_ear", st.ear || 0);
+          // 鼻尖上頂著第六集撿到的蛋殼
+          piece("el_trunk", st.trunk !== undefined ? st.trunk : -2.5, st.shell ? { after: () => piece("egg6_bottom", 2.5, { ax: 4.5, ay: 19, scale: 1.2 }) } : undefined);
+          ctx.restore();
+        },
+        sq: (st) => {
+          piece("sq_tail", st.tail || 0);
+          piece("sq_body", 0);
+          piece("sq_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        gp: (st) => {
+          piece("gp_body", 0);
+          piece("gp_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        hm: (st) => {
+          piece("hm_body", 0);
+          piece("hm_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        qk: (st) => {
+          piece("qk_body", 0);
+          piece("qk_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        sh: (st) => {
+          piece("sh_legs", 0);
+          piece("sh_wool", 0, { scale: st.wool || 1 });
+          piece("sh_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        gt: (st) => {
+          piece("gt_body", 0);
+          piece("gt_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        ln: (st) => {
+          piece("ln_body", 0);
+          piece("ln_head_" + (st.face || "open") + (st.messy ? "_messy" : ""), st.headRot || 0);
+        },
+        br: (st) => {
+          piece("br_body", 0);
+          const after = st.bump ? () => piece("bump", 0, { ax: 3, ay: -10.6, scale: st.bump }) : null;
+          piece("br_head_" + (st.face || "open"), st.headRot || 0, { after });
+        },
+        rb: (st) => {
+          if (!st.front) {
+            piece("rb_body", 0);
+            return piece("rb_head_" + (st.face || "open") + "_" + (st.ears || "up"), st.headRot || 0);
+          }
+          // 正面：scared 是有眼珠的大眼睛（眼白左上格在 4,10 與 10,10；座標相對於頭的關節 7.5,16）
+          const eyes = st.face === "happy" ? "happy" : st.face === "dizzy" ? "dizzy" : "scared";
+          const after = eyes === "scared" ? () => [4, 10].forEach((x) => piece("pupil", 0, { ax: x + 1 - 7.5, ay: 10 + 1 - 16 })) : null;
+          piece("rb_front_body", 0);
+          piece("rb_front_" + eyes + "_" + (st.ears || "up"), st.headRot || 0, { after });
+        },
+        fx: (st) => {
+          piece("fx_body", 0);
+          piece("fx_head_" + (st.face || "open"), st.headRot || 0);
+          const after = st.prop === "coin" ? () => piece("coin", 1.0, { ax: 4.6, ay: 3.4, scale: 1.1 }) : null;
+          piece("fx_arm", st.armRot || 0, { after });
+        },
+        yn: (st) => {
+          piece("yn_body", 0);
+          piece("yn_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        dg: (st) => {
+          piece("dg_body", 0);
+          piece("dg_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        sd: (st) => piece("sd_" + (st.face || "open"), st.headRot || 0),
+        ck: (st) => {
+          piece("ck_body", 0);
+          const after = st.shell ? () => piece("egg6_top", -0.15, { ax: 0, ay: -5.2, scale: 1.0 }) : null;
+          piece("ck_head_" + (st.face || "open"), st.headRot || 0, { after });
+        },
+        pg: (st) => {
+          piece("pg_body", 0);
+          piece("pg_head_" + (st.face || "open"), st.headRot || 0);
+          piece("pg_flipper", st.flap || 0.15);
+        },
+        cr: (st) => {
+          piece("cr_leg_far", -(st.leg || 0));
+          piece("cr_body", 0);
+          piece("cr_wing", st.flap || 0);
+          piece("cr_leg", st.leg || 0);
+          piece("cr_neck_" + (st.face || "open"), st.headRot || 0);
+        },
+        ow: (st) => {
+          const face = st.face === "open" ? "awake" : st.face === "dizzy" ? "awake" : st.face;
+          if (st.fly) piece("ow_wing_spread", st.flap || 0);
+          piece("ow_body", 0);
+          if (!st.fly) piece("ow_wing", 0);
+          piece("ow_head_" + face, st.headRot || 0);
+          if (st.fly) piece("ow_wing_spread", -(st.flap || 0) * 0.6);
+        },
+        cb: (st) => {
+          piece("cb_body", 0);
+          const after = st.orange ? () => piece("orange", 0.1, { ax: 2.4, ay: -6.6 }) : null;
+          piece("cb_head_" + (st.face || "open"), st.headRot || 0, { after });
+        },
+        pi: (st) => {
+          piece("pi_body", 0);
+          piece("pi_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        fr: (st) => {
+          piece("fr_body", 0);
+          piece("fr_head_" + (st.face || "open"), st.headRot || 0);
+        },
+        sl: (st) => {
+          piece("sl_leg_far", -(st.leg || 0));
+          piece("sl_arm_far", st.armFar !== undefined ? st.armFar : -(st.leg || 0));
+          piece("sl_body", 0);
+          piece("sl_leg", st.leg || 0);
+          piece("sl_head_" + (st.face || "open"), st.headRot || 0);
+          piece("sl_arm", st.armRot !== undefined ? st.armRot : st.leg || 0);
+        },
+      };
+      function drawAnimal(st) {
+        drawRig(st, () => DRAW[st.kind](st));
+      }
+
+      // 蛇：捲成一圈（同第三集）；fy 是圈底的高度
+      const RING_R = 23.5;
+      function drawSnake(sn) {
+        ctx.save();
+        ctx.translate(sn.fx, (sn.fy !== undefined ? sn.fy : GROUND) - (sn.hop || 0));
+        piece("sn_ring", sn.spin || 0, { ax: 0, ay: -RING_R });
+        piece("sn_tail", 0.35, { ax: -3, ay: -RING_R * 2 + 1 });
+        piece("sn_head_" + (sn.face || "open"), sn.headRot || 0, { ax: 1, ay: -RING_R * 2 + 1.5 });
+        ctx.restore();
+      }
+
+      // ---------- 角色名單（片尾演員表也照這個順序：依出場的集數） ----------
+      const CAST = [
+        ["cat", "小貓", "Eva"],
+        ["mk", "狐獴", "Ethan"], ["ot", "水獺", "Ann"], ["gf", "長頸鹿", "Charlotte"], ["el", "大象", "Allen"],
+        ["sq", "松鼠", "Joy"], ["gp", "天竺鼠", "Mia"], ["hm", "倉鼠", "Leo"], ["qk", "矮袋鼠", "Amber"], ["sn", "蛇", "Emily"],
+        ["sh", "綿羊", "Yvette"], ["gt", "山羊", "Zeyi"], ["ln", "獅子", "David"], ["br", "棕熊", "Steve"], ["rb", "小白兔", "Maisie"],
+        ["fx", "狐狸", "Lesley"], ["dg", "芝麻狗", "Sylvia"], ["yn", "西施犬", "Yennefer"], ["sd", "魷魚", "Eden"],
+        ["pg", "小企鵝", "Tiffany"], ["cr", "仙鶴", "Calla"], ["ck", "小雞", "Sally"], ["ow", "貓頭鷹", "Jade"],
+        ["cb", "水豚", "Uma"], ["pi", "迷你豬", "Bella"], ["fr", "青蛙", "Eli"], ["sl", "樹懶", "Yoga"],
+      ];
+      // 第四集打架後的四隻還是放大兩倍，後遺症照舊：山羊頭卡在綿羊毛裡、獅子爆炸頭、棕熊腫包
+      const BIG = 2;
+      const STUCK = 17 * BIG;
+      const TAG_SCALE = { el: 1, gf: 1, ot: 1, mk: 1, sn: 1, sq: 0.85, gp: 0.8, hm: 0.75, qk: 0.85, sh: 1.4, gt: 1.4, ln: 1.4, br: 1.4, rb: 0.75, fx: 1, yn: 0.85, dg: 1.2, sd: 0.7, pg: 0.85, cr: 1.3, ck: 0.6, ow: 0.7, cb: 1.0, pi: 0.75, fr: 0.6, sl: 0.9, cat: 1.0 };
+
+      // 每隻的固定裝扮（大小、道具、後遺症）
+      function dress(st, t) {
+        const kd = st.kind;
+        if (kd === "ln") {
+          st.k = BIG;
+          st.messy = true;
+        }
+        if (kd === "br") {
+          st.k = BIG;
+          st.bump = 1;
+        }
+        if (kd === "el") {
+          st.ear = Math.sin(t * 2.2) * 0.06;
+          st.shell = true;
+        }
+        if (kd === "sq") st.tail = Math.sin(t * 6) * 0.2;
+        if (kd === "dg") st.k = 1.3;
+        if (kd === "sd") st.k = 0.85;
+        if (kd === "ck") st.shell = true;
+        if (kd === "cb") st.orange = true;
+        if (kd === "rb") st.ears = "up";
+        return st;
+      }
+      // 畫一隻（cat／sn／pair 是特例），回傳掛名牌的位置清單 [[x, y, scale, swing], ...]
+      function drawActor(st, t) {
+        const kd = st.kind;
+        if (kd === "cat") {
+          const c = Object.assign({ x: st.fx - 20, y: st.fy - 32, head: st.face === "happy" ? "s_head_happy_bow" : "s_head_open_bow", armRot: -0.15, tail: Math.sin(t * 2) * 0.12 }, st.cat || {});
+          c.hop = st.hop || 0;
+          drawCat(c);
+          return st.tag ? [[c.x + (c.view === "front" ? 22 : 21), c.y + 18 - (st.hop || 0), st.tag, 0]] : [];
+        }
+        if (kd === "sn") {
+          drawSnake(st);
+          return [[st.fx + 3, (st.fy !== undefined ? st.fy : GROUND) - (st.hop || 0) - RING_R * 2 + 2, TAG_SCALE.sn, 0]];
+        }
+        if (kd === "pair") {
+          const goat = st.free
+            ? { kind: "gt", k: BIG, sx: -1, fx: st.fx, fy: st.fy, face: st.face, hop: st.hop || 0, rot: 0, headRot: 0 }
+            : { kind: "gt", k: BIG, sx: -1, fx: st.fx, fy: st.fy, face: st.face, hop: (st.hop || 0) + Math.abs(Math.sin(t * 18)) * 1.2, rot: Math.sin(t * 9) * 0.05, headRot: 0.6 + Math.sin(t * 9) * 0.06 };
+          Object.assign(goat, st.goat || {});
+          const sheep = { kind: "sh", k: BIG, fx: st.sheepX !== undefined ? st.sheepX : st.fx - STUCK, fy: st.fy, face: st.face, hop: st.hop || 0, wool: 1.55, rot: -0.06 };
+          drawAnimal(goat);
+          drawAnimal(sheep);
+          return [rigToWorld(goat, RIG.gt.neck).concat([TAG_SCALE.gt, 0]), rigToWorld(sheep, RIG.sh.neck).concat([TAG_SCALE.sh, 0])];
+        }
+        drawAnimal(st);
+        if (st.noTag) return [];
+        return [rigToWorld(st, RIG[kd].neck).concat([TAG_SCALE[kd], st.rot ? st.rot * 0.5 : 0])];
+      }
+      function tags(list, t) {
+        list.forEach(([x, y, s, r], i) => piece("name_tag", r + Math.sin(t * 3 + i * 1.7) * 0.06, { ax: x, ay: y, scale: s }));
+      }
+
+      // ---------- 世界畫布：背景先畫在小畫布上（1 格 = 1 px）再放大，避免接縫 ----------
+      function makeWorld(w, h) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        return { c, g: c.getContext("2d"), w, h };
+      }
+      let g = null;
+      function R(x, y, w, h, c) {
+        g.fillStyle = c;
+        g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+      }
+      function triW(cx, top, hw, bot, c) {
+        for (let y = top; y <= bot; y++) {
+          const w = Math.round(((y - top) / (bot - top)) * hw);
+          R(cx - w, y, w * 2 + 1, 1, c);
+        }
+      }
+      function cloud(x, y, w) {
+        R(x + 2, y, w - 4, 1, "#FFFFFF");
+        R(x, y + 1, w, 2, "#FFFFFF");
+        R(x + 1, y + 3, w - 2, 1, "#EAF4FC");
+      }
+      function bush(x, y) {
+        R(x + 2, y, 8, 2, "#7DBB76");
+        R(x, y + 2, 12, 5, "#6FAF68");
+        R(x + 1, y + 7, 10, 1, "#5E9E5A");
+        R(x + 3, y + 1, 1, 1, "#F6B7C8");
+        R(x + 8, y + 3, 1, 1, "#F6B7C8");
+        R(x + 5, y + 4, 1, 1, "#FFFFFF");
+      }
+      function balloon(x, y, c, hi) {
+        R(x - 1, y - 3, 3, 1, c);
+        R(x - 2, y - 2, 5, 3, c);
+        R(x - 1, y + 1, 3, 1, c);
+        R(x, y + 2, 1, 1, c);
+        R(x - 1, y - 2, 1, 1, hi);
+      }
+      // 鏡頭：把世界畫布照 (x, y, z) 放到畫面上；之後的零件也用同一個座標系
+      function camera(W, x, y, z) {
+        const vw = 128 / z;
+        const vh = GH / z;
+        const cx = Math.min(W.w - vw / 2, Math.max(vw / 2, x));
+        const cy = Math.min(W.h - vh / 2, Math.max(vh / 2, y));
+        const k = P * z;
+        ctx.setTransform(k, 0, 0, k, -(cx - vw / 2) * k, -(cy - vh / 2) * k);
+        ctx.drawImage(W.c, 0, 0, W.w, W.h);
+      }
+
+      // ---------- 場景一：草地盡頭的派對會場（220 x 72） ----------
+      const WA = makeWorld(220, GH);
+      const VENUE_X = 128;
+      const DOOR_X0 = 150;
+      const DOOR_X1 = 174;
+      const DOOR_TOP = 20;
+      function outside(t, doorShut) {
+        g = WA.g;
+        R(0, 0, WA.w, 34, "#BFDDF5");
+        R(0, 34, WA.w, 12, "#D7EBF8");
+        [[0, 4, 12, 1.6], [60, 10, 9, 1.1], [110, 6, 10, 1.3]].forEach(([x0, y, w, v]) => cloud(((x0 + t * v) % 160) - 20, y, w));
+        triW(22, 30, 26, 47, "#A8D5A2");
+        triW(70, 34, 22, 47, "#93C98E");
+        triW(108, 28, 28, 47, "#A8D5A2");
+        R(0, 46, WA.w, 26, "#B7DFA8");
+        for (let y = 49; y < GH; y += 4) R(0, y, WA.w, 1, "#A6D497");
+        for (let i = 0; i < 60; i++) {
+          const x = Math.floor(hash(i, 7, 1) * VENUE_X);
+          const y = 48 + Math.floor(hash(i, 7, 2) * 23);
+          R(x, y, 1, 1, ["#F6B7C8", "#FFFFFF", "#BFDDF5", "#FFD36B"][i % 4]);
+        }
+        bush(30, 44);
+        bush(96, 45);
+        // 會場：奶油白牆、粉紅條紋、粉白遮雨棚、三角旗
+        R(VENUE_X, 2, WA.w - VENUE_X, GROUND - 2, "#FFF6EA");
+        for (let x = VENUE_X + 2; x < WA.w; x += 6) R(x, 14, 2, GROUND - 14, "#FCD9E3");
+        R(VENUE_X, 0, WA.w - VENUE_X, 3, "#E79AB0");
+        for (let i = 0; i < 16; i++) R(VENUE_X + i * 6, 2, 6, 4, i % 2 ? "#FFFFFF" : "#F6B7C8");
+        for (let i = 0; i < 16; i++) R(VENUE_X + 1 + i * 6, 6, 4, 1, i % 2 ? "#FFFFFF" : "#F6B7C8");
+        for (let i = 0; i < 23; i++) {
+          const c = i % 2 ? "#BFDDF5" : "#F6B7C8";
+          R(VENUE_X + 1 + i * 4, 8, 3, 1, c);
+          R(VENUE_X + 2 + i * 4, 9, 1, 1, c);
+        }
+        R(VENUE_X, GROUND - 3, WA.w - VENUE_X, 3, "#E79AB0");
+        // 左邊的窗：裡面飄著氣球
+        R(VENUE_X + 4, 24, 16, 22, "#5A3422");
+        R(VENUE_X + 5, 25, 14, 20, "#FFE9C7");
+        balloon(VENUE_X + 9, 31 + Math.round(Math.sin(t * 2)), "#F6B7C8", "#FFFFFF");
+        balloon(VENUE_X + 15, 33 + Math.round(Math.sin(t * 2 + 1)), "#BFDDF5", "#FFFFFF");
+        R(VENUE_X + 12, 25, 1, 20, "#5A3422");
+        // 大門：裡面亮著暖黃燈、掛著小燈串
+        R(DOOR_X0 - 2, DOOR_TOP - 2, DOOR_X1 - DOOR_X0 + 4, GROUND - DOOR_TOP + 2, "#6B3E28");
+        R(DOOR_X0, DOOR_TOP, DOOR_X1 - DOOR_X0, GROUND - DOOR_TOP, "#FFE3B0");
+        R(DOOR_X0, GROUND - 8, DOOR_X1 - DOOR_X0, 8, "#E8C48C");
+        for (let i = 0; i < 6; i++) R(DOOR_X0 + 2 + i * 4, DOOR_TOP + 2 + (i % 2), 1, 1, hash(i, Math.floor(t * 4), 9) > 0.4 ? "#FFD36B" : "#F6B7C8");
+        // 門板：開著時貼在門框右邊（doorShut = 0），關門時往左蓋上（1）
+        const pw = Math.max(2, Math.round((DOOR_X1 - DOOR_X0) * (0.1 + doorShut * 0.9)));
+        R(DOOR_X1 - pw, DOOR_TOP, pw, GROUND - DOOR_TOP, "#8A5236");
+        if (pw > 10) {
+          R(DOOR_X1 - pw + 3, DOOR_TOP + 4, pw - 6, 10, "#FFE9C7");
+          R(DOOR_X1 - pw + 3, DOOR_TOP + 26, 1, 4, "#FFD36B");
+        }
+        // 右邊的窗
+        R(DOOR_X1 + 8, 24, 16, 22, "#5A3422");
+        R(DOOR_X1 + 9, 25, 14, 20, "#FFE9C7");
+        balloon(DOOR_X1 + 14, 32 + Math.round(Math.sin(t * 2 + 2)), "#F6B7C8", "#FFFFFF");
+        R(DOOR_X1 + 16, 25, 1, 20, "#5A3422");
+        // 門前的小階梯
+        R(DOOR_X0 - 4, GROUND, DOOR_X1 - DOOR_X0 + 8, 2, "#E2DCCE");
+        R(DOOR_X0 - 6, GROUND + 2, DOOR_X1 - DOOR_X0 + 12, 2, "#D9CFC4");
+      }
+
+      // ---------- 場景二：會場裡面（256 x 144，鏡頭拉到 0.5 倍剛好看全部的人） ----------
+      const WH = makeWorld(256, 144);
+      const WIDE = 128 / 256;
+      const FLOOR = 104;
+      const ROW_B = 118; // 後排腳底
+      const ROW_M = 126;
+      const ROW_F = 134;
+      const TABLE = [12, 70]; // 長桌左右
+      function hall(t, lightsOff) {
+        g = WH.g;
+        R(0, 0, WH.w, FLOOR, "#FFF6EA");
+        for (let x = 3; x < WH.w; x += 10) R(x, 0, 4, FLOOR, "#FCE6EC");
+        R(0, FLOOR - 14, WH.w, 14, "#F6B7C8");
+        R(0, FLOOR - 15, WH.w, 1, "#E79AB0");
+        for (let x = 4; x < WH.w; x += 12) R(x, FLOOR - 11, 8, 8, "#F9C9D5");
+        R(0, FLOOR, WH.w, WH.h - FLOOR, "#D9A86A");
+        for (let y = FLOOR + 4, k = 0; y < WH.h; y += 6, k++) {
+          R(0, y, WH.w, 1, "#C8955A");
+          for (let x = (k % 2) * 17; x < WH.w; x += 34) R(x, y - 5, 1, 5, "#C8955A");
+        }
+        R(0, FLOOR, WH.w, 1, "#B07C48");
+        // 兩串三角旗、燈串
+        [[0, 6], [0, 18]].forEach(([, y0], j) => {
+          for (let i = 0; i < 44; i++) {
+            const x = i * 6 + j * 3;
+            const sag = Math.round(Math.sin(((x % 80) / 80) * Math.PI) * 6);
+            const c = ["#F6B7C8", "#BFDDF5", "#FFD36B", "#FFFFFF"][(i + j) % 4];
+            R(x, y0 + sag, 5, 1, "#C9B8A6");
+            R(x + 1, y0 + sag + 1, 3, 2, c);
+            R(x + 2, y0 + sag + 3, 1, 1, c);
+          }
+        });
+        for (let i = 0; i < 32; i++) {
+          const x = 4 + i * 8;
+          const y = 30 + Math.round(Math.sin(((x % 120) / 120) * Math.PI) * 5);
+          R(x, y, 1, 1, hash(i, Math.floor(t * 3), 5) > 0.35 ? "#FFD36B" : "#FFFFFF");
+        }
+        // 氣球串
+        [[6, 54], [12, 50], [9, 60], [244, 54], [250, 50], [247, 60]].forEach(([x, y], i) => {
+          balloon(x, y + Math.round(Math.sin(t * 2 + i)), i % 2 ? "#BFDDF5" : "#F6B7C8", "#FFFFFF");
+          R(x, y + 3, 1, FLOOR - 16 - y, "#C9B8A6");
+        });
+        // 長桌：粉格桌巾、烤雞、草莓蛋糕、水果、果汁
+        const [x0, x1] = TABLE;
+        const ty = FLOOR - 4;
+        R(x0 + 2, ty + 8, 2, ROW_B - ty - 8, "#6B4430");
+        R(x1 - 4, ty + 8, 2, ROW_B - ty - 8, "#6B4430");
+        R(x0, ty, x1 - x0, 10, "#FFFFFF");
+        for (let y = ty; y < ty + 10; y += 2) for (let x = x0 + ((y / 2) % 2) * 2; x < x1; x += 4) R(x, y, 2, 2, "#F6B7C8");
+        R(x0, ty + 9, x1 - x0, 1, "#E79AB0");
+        // 烤雞
+        R(x0 + 3, ty - 2, 12, 2, "#FFFFFF");
+        R(x0 + 4, ty - 7, 10, 5, "#B86E2E");
+        R(x0 + 5, ty - 8, 8, 2, "#C8803A");
+        R(x0 + 6, ty - 7, 3, 1, "#E3A55A");
+        // 草莓蛋糕（兩層）＋蠟燭
+        R(x0 + 19, ty - 1, 14, 1, "#FFFFFF");
+        R(x0 + 20, ty - 7, 12, 6, "#F6B7C8");
+        R(x0 + 20, ty - 4, 12, 1, "#FFFFFF");
+        R(x0 + 22, ty - 12, 8, 5, "#F6B7C8");
+        R(x0 + 22, ty - 12, 8, 1, "#FFFFFF");
+        [23, 26, 29].forEach((x) => R(x0 + x, ty - 13, 1, 1, "#E8475A"));
+        R(x0 + 26, ty - 16, 1, 3, "#BFDDF5");
+        R(x0 + 26, ty - 17, 1, 1, lightsOff ? "#BFDDF5" : hash(1, Math.floor(t * 6), 2) > 0.5 ? "#FFD36B" : "#FFB347");
+        // 水果盤、果汁
+        R(x0 + 36, ty - 2, 9, 2, "#BFDDF5");
+        R(x0 + 37, ty - 4, 2, 2, "#F5A33A");
+        R(x0 + 39, ty - 5, 2, 2, "#8CC56A");
+        R(x0 + 41, ty - 4, 2, 2, "#E8475A");
+        R(x0 + 48, ty - 6, 3, 6, "#FFFFFF");
+        R(x0 + 48, ty - 4, 3, 4, "#FCC9A5");
+        R(x0 + 52, ty - 6, 3, 6, "#FFFFFF");
+        R(x0 + 52, ty - 4, 3, 4, "#BFDDF5");
+      }
+      // 長桌右邊堆著拆過的禮物盒（零件，畫在角色後面）
+      function giftPile(t) {
+        [[236, 112, 0.9], [248, 113, 1.0], [242, 104, 0.8]].forEach(([x, y, s], i) =>
+          piece("gift6", (i % 2 ? 0.08 : -0.06), { ax: x, ay: y - 8 * s, scale: s }),
+        );
+      }
+      function banner(t, y) {
+        piece("sign_back", Math.sin(t * 1.2) * 0.015, { ax: 128, ay: y || 46, scale: 1.25 });
+      }
+
+      // ---------- 場景三：第一集的房間（傍晚，128 x 72） ----------
+      const WR = makeWorld(128, GH);
+      function room(t) {
+        g = WR.g;
+        R(0, 0, 128, 52, "#5B3A2A");
+        for (let x = 0; x < 128; x += 8) R(x, 0, 1, 52, "#4E3124");
+        R(0, 40, 128, 1, "#4A2E21");
+        R(0, 52, 128, 20, "#8B5A3C");
+        for (let y = 56, k = 0; y < GH; y += 5, k++) {
+          R(0, y, 128, 1, "#7A4C31");
+          for (let x = (k % 2) * 13; x < 128; x += 26) R(x, y - 4, 1, 4, "#7A4C31");
+        }
+        // 窗外：夕陽
+        R(88, 6, 36, 34, "#6E4A33");
+        R(90, 8, 32, 30, "#F8C08A");
+        R(90, 8, 32, 10, "#F3A6A0");
+        R(90, 26, 32, 12, "#FBD9A0");
+        R(102, 24, 8, 4, "#FFE9A8");
+        R(103, 23, 6, 1, "#FFE9A8");
+        triW(97, 28, 9, 38, "#C9A07A");
+        triW(114, 30, 10, 38, "#B78C6A");
+        R(105, 8, 1, 30, "#6E4A33");
+        R(90, 22, 32, 1, "#6E4A33");
+        R(86, 39, 40, 2, "#7C5439");
+      }
+
+      // ---------- 小工具：音符、彩帶、像素數字 ----------
+      const NOTE = ["..##", "..#.", "..#.", "###.", "##.."];
+      function stampCtx(rows, x, y, c, s) {
+        ctx.fillStyle = c;
+        rows.forEach((row, j) => {
+          for (let i = 0; i < row.length; i++) if (row[i] !== ".") ctx.fillRect(x + i * s, y + j * s, s, s);
+        });
+      }
+      function confetti(t, t0, dur, n, seed, w, h) {
+        if (t < t0 || t > t0 + dur) return;
+        const cols = ["#F6B7C8", "#BFDDF5", "#FFD36B", "#DE6A93", "#5B98D6", "#FFFFFF"];
+        for (let i = 0; i < n; i++) {
+          const u = t - t0 - hash(i, seed, 1) * 0.6;
+          if (u < 0) continue;
+          const x = hash(i, seed, 2) * w + Math.sin(u * 3 + i) * 2;
+          const y = -4 + u * (14 + hash(i, seed, 3) * 10);
+          if (y > h) continue;
+          ctx.fillStyle = cols[i % cols.length];
+          const flip = Math.abs(Math.sin(u * 8 + i));
+          ctx.fillRect(Math.round(x), Math.round(y), 1, flip > 0.4 ? 1 : 0.5);
+        }
+      }
+      const DIGIT = {
+        3: ["###", "..#", "###", "..#", "###"],
+        2: ["###", "..#", "###", "#..", "###"],
+        1: [".#.", "##.", ".#.", ".#.", "###"],
+      };
+
+      // ---------- 照片：把某個畫面畫好之後存成一張圖（只算一次） ----------
+      const SHOTS = {};
+      function shot(key, draw) {
+        if (SHOTS[key]) return SHOTS[key];
+        draw();
+        const c = document.createElement("canvas");
+        c.width = 960;
+        c.height = 540;
+        const x = c.getContext("2d");
+        x.imageSmoothingEnabled = true;
+        x.drawImage(out, 0, 0, 960, 540);
+        SHOTS[key] = c;
+        return c;
+      }
+      // 拍立得：在畫面像素座標畫（cx, cy 中心、w 寬）；cap 是下方手寫字
+      function polaroid(img, cx, cy, w, rot, cap) {
+        const ih = (w * 9) / 16;
+        const b = w * 0.035;
+        const fh = ih + b + w * 0.13;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        ctx.fillStyle = "rgba(40, 20, 30, 0.28)";
+        ctx.fillRect(-w / 2 - b + w * 0.012, -fh / 2 + w * 0.016, w + 2 * b, fh);
+        ctx.fillStyle = "#FFFDF8";
+        ctx.fillRect(-w / 2 - b, -fh / 2, w + 2 * b, fh);
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(img, -w / 2, -fh / 2 + b, w, ih);
+        ctx.imageSmoothingEnabled = false;
+        if (cap) {
+          ctx.fillStyle = "#8C6E52";
+          ctx.font = "bold " + Math.round(w * 0.05) + "px 'Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC', sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(cap, 0, -fh / 2 + b + ih + w * 0.065);
+        }
+        ctx.restore();
+      }
+
+      // ---------- 走進會場的隊伍 ----------
+      // GAP：腳底落後小貓腳底多少格；仙鶴叼著樹懶、貓頭鷹飛在上面、魷魚最後才衝進來
+      const V_IN = 64;
+      const CAT_IN0 = 0.4;
+      const CAT_FOOT0 = 52;
+      const GAP_IN = {
+        cr: 28, cb: 50, pair: 86, ln: 136, br: 172, sn: 204, el: 238, gf: 268, dg: 290, fx: 308,
+        fr: 12, pi: 24, ck: 36, pg: 46, rb: 58, sq: 70, gp: 80, hm: 90, qk: 100, ot: 112, mk: 126, yn: 138,
+        ow: 20, sd: 330,
+      };
+      const BACK_IN = ["cr", "cb", "pair", "ln", "br", "sn", "el", "gf", "dg", "fx"];
+      const FRONT_IN = ["fr", "pi", "ck", "pg", "rb", "sq", "gp", "hm", "qk", "ot", "mk", "yn", "sd"];
+      const inFoot = (kd, t) => CAT_FOOT0 + V_IN * (t - CAT_IN0) - GAP_IN[kd];
+      const LAST_IN = CAT_IN0 + (DOOR_X1 + 30 - CAT_FOOT0 + GAP_IN.sd) / V_IN;
+      const DOOR_SHUT = [Math.min(A_END - 1.4, LAST_IN + 0.1), Math.min(A_END - 1.1, LAST_IN + 0.4)];
+
+      function stride(st, w, n) {
+        const kd = st.kind;
+        const ph = w * Math.PI * (kd === "el" ? 3 : 3.4) + (n || 0);
+        st.hop = Math.abs(Math.sin(ph)) * (kd === "el" ? 0.8 : kd === "gf" || kd === "cr" ? 1.2 : st.k ? 2.4 : 2);
+        if (kd === "fr") st.hop = Math.abs(Math.sin(ph * 0.5)) * 6;
+        if (kd === "el" || kd === "gf" || kd === "cr") st.leg = Math.sin(ph) * (kd === "el" ? 0.25 : 0.3);
+        if (kd === "pg") st.rot = Math.sin(ph) * 0.18;
+      }
+      function sceneArrive(t) {
+        outside(t, tw(t, DOOR_SHUT[0], DOOR_SHUT[1], 0, 1, "in"));
+        const camX = path(t, [[0, 120], [1.6, 146, "io"]]);
+        camera(WA, camX, 36, 1);
+        // 只看得到門框左邊、以及門口裡面的部分（走進門就不見了）
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-10, -10, DOOR_X0 + 10, GH + 20);
+        ctx.rect(DOOR_X0, DOOR_TOP, DOOR_X1 - DOOR_X0, GH - DOOR_TOP);
+        ctx.clip();
+        const draws = [];
+        const ducking = (fx) => tw(fx, DOOR_X0 - 40, DOOR_X0 - 14, 0, 1, "io");
+        BACK_IN.concat(FRONT_IN).forEach((kd, n) => {
+          const fx = inFoot(kd, t);
+          if (fx < -40 || fx > DOOR_X1 + 40) return;
+          const st = dress({ kind: kd, fx, fy: FRONT_IN.includes(kd) ? FRONT : GROUND, face: "happy" }, t);
+          stride(st, t, n);
+          if (kd === "gf") st.headRot = 0.9 * ducking(fx); // 長頸鹿低頭進門
+          if (kd === "fx") {
+            st.prop = "coin";
+            st.armRot = -1.0 + Math.sin(t * 4) * 0.08;
+          }
+          if (kd === "sd") st.hop = Math.abs(Math.sin(t * 14)) * 4; // 魷魚最後才蹦蹦跳跳衝進來
+          if (kd === "sn") st.spin = fx / RING_R;
+          draws.push(st);
+        });
+        // 仙鶴叼著第七集的樹懶走在最前面（低頭進門）
+        const crane = draws.find((s) => s.kind === "cr");
+        if (crane) {
+          crane.headRot = 0.2 + 0.5 * ducking(crane.fx);
+        }
+        // 前排的畫在後面，最後畫天上的貓頭鷹
+        const all = [];
+        draws.filter((s) => !FRONT_IN.includes(s.kind)).forEach((s) => all.push(s));
+        const catFoot = CAT_FOOT0 + V_IN * (t - CAT_IN0);
+        const cat = { kind: "cat", fx: catFoot, fy: GROUND, face: "happy", cat: {} };
+        walkPose(cat.cat, t * Math.PI * 3.6, 1);
+        all.push(cat);
+        draws.filter((s) => FRONT_IN.includes(s.kind)).forEach((s) => all.push(s));
+        all.forEach((s) => {
+          if (s.kind === "cat") {
+            const c = Object.assign({ x: s.fx - 20, y: s.fy - 32, head: "s_head_happy_bow", armRot: -0.15 }, s.cat);
+            drawCat(c);
+            return;
+          }
+          tags(drawActor(s, t), t);
+          if (s.kind === "cr") {
+            // 樹懶被叼著晃來晃去，照樣慢動作揮手
+            const b = rigToWorld(s, rotAbout([31, 8], [19, 26], s.headRot || 0));
+            const sl = { kind: "sl", fx: b[0] - 1, fy: b[1] + 14, rot: Math.sin(t * 3) * 0.12, leg: Math.sin(t * 2) * 0.25, armRot: -1.8 + Math.sin(t * 1.6) * 0.4, face: "happy" };
+            sl.armFar = -sl.leg;
+            tags(drawActor(sl, t), t);
+          }
+        });
+        const owx = inFoot("ow", t);
+        if (owx > -20 && owx < DOOR_X1 + 30) {
+          const ow = { kind: "ow", fx: owx, fy: tw(owx, DOOR_X0 - 50, DOOR_X0, 30, 46, "io") + Math.sin(t * 5) * 1.5, fly: true, flap: Math.sin(t * 14) * 0.6, face: "happy" };
+          tags(drawActor(ow, t), t);
+        }
+        ctx.restore();
+        // 門關上之後：裡面傳出音樂，音符、愛心從門縫和窗戶冒出來
+        if (t > DOOR_SHUT[1]) {
+          for (let i = 0; i < 9; i++) {
+            const u = (t - DOOR_SHUT[1] - i * 0.12) / 1.1;
+            if (u < 0 || u > 1) continue;
+            const x = [DOOR_X0 + 6, DOOR_X1 + 15, VENUE_X + 12][i % 3] + Math.sin(u * 6 + i) * 3;
+            const y = (i % 3 === 0 ? DOOR_TOP + 6 : 30) - u * 18;
+            if (i % 2) stampCtx(NOTE, x, y, i % 4 === 1 ? "#DE6A93" : "#5B98D6", 1);
+            else piece("heart", Math.sin(t * 6 + i) * 0.2, { ax: x, ay: y, scale: Math.sin(u * Math.PI) * 1.3 });
+          }
+        }
+        // 招牌
+        piece("sign_back", 0, { ax: (DOOR_X0 + DOOR_X1) / 2, ay: 10 + pop(t, DOOR_SHUT[1], 0.8, 0.6), scale: 0.72 });
+      }
+
+      // ---------- 會場裡的站位 ----------
+      // 合照：後排高個子（蛇躲在大象後面探頭）、中排、前排小個子，小貓站在前排正中間；貓頭鷹飛在上面
+      const ROWS = {
+        gf: [24, ROW_B], cr: [58, ROW_B], sn: [116, ROW_B], el: [112, ROW_B], ln: [168, ROW_B], br: [222, ROW_B],
+        pair: [70, ROW_M], dg: [134, ROW_M], fx: [160, ROW_M], cb: [188, ROW_M], sl: [214, ROW_M],
+        mk: [14, ROW_F], ot: [30, ROW_F], sq: [46, ROW_F], gp: [62, ROW_F], hm: [76, ROW_F], qk: [90, ROW_F], rb: [104, ROW_F],
+        cat: [128, ROW_F],
+        pi: [152, ROW_F], yn: [170, ROW_F], pg: [186, ROW_F], ck: [200, ROW_F], fr: [214, ROW_F], sd: [232, ROW_F],
+        ow: [194, 74],
+      };
+      // 吃飽玩夠：大家東倒西歪地坐著、躺著（相對合照位置的位移與傾斜）
+      const LAZY = {
+        gf: [10, -0.06], cr: [6, -0.05], el: [-6, -0.04], ln: [6, -0.18], br: [-4, -0.2],
+        pair: [-8, 0], sn: [4, 0], dg: [-6, -0.25], fx: [8, -0.3], cb: [0, -0.1], sl: [10, -1.3],
+        mk: [6, -0.35], ot: [4, -1.4], sq: [-2, -0.3], gp: [8, 0], hm: [-6, -1.5], qk: [6, -0.25], rb: [-8, -0.3],
+        cat: [0, 0],
+        pi: [-10, -1.55], yn: [4, -0.3], pg: [-4, -0.2], ck: [4, 0], fr: [-6, -3.1], sd: [-8, -0.2],
+        ow: [0, 0],
+      };
+      const ORDER = ["gf", "cr", "sn", "el", "ln", "br", "pair", "dg", "fx", "cb", "sl", "mk", "ot", "sq", "gp", "hm", "qk", "rb", "cat", "pi", "yn", "pg", "ck", "fr", "sd", "ow"];
+
+      // 山羊：使勁拔 → 拔出來往後飛、翻成四腳朝天 → 預祝時翻回來 → 合照時自己站在綿羊旁邊
+      const GOAT_FLY = 0.6;
+      const GOAT_OUT = 30; // 摔在綿羊右後方多遠
+      const GOAT_ROW = 98; // 合照時山羊自己的腳底 x
+      function goatState(t, fx, fy, u) {
+        if (t < TOSS - 0.9) return null;
+        const flipY = fy - RIG.gt.h * BIG; // 翻過來之後腳底朝上，身體要墊高一整隻
+        if (t < TOSS) {
+          const k = (t - (TOSS - 0.9)) / 0.9;
+          return { free: false, goat: { fx: fx + 2 * k + Math.sin(t * 40) * 0.8, rot: -0.15 * k + Math.sin(t * 30) * 0.05, headRot: 0.6 - 0.3 * k, face: "dizzy" } };
+        }
+        const gx = fx + GOAT_OUT;
+        if (t < TOSS + GOAT_FLY) {
+          const v = (t - TOSS) / GOAT_FLY;
+          return { free: true, goat: { fx: fx + GOAT_OUT * E.out(v), fy: fy + (flipY - fy) * v - Math.sin(v * Math.PI) * 22, rot: -Math.PI * E.io(v), face: "dizzy" } };
+        }
+        if (t < WISH) return { free: true, goat: { fx: gx, fy: flipY, rot: -Math.PI + Math.sin(t * 12) * 0.05, face: "dizzy" } };
+        if (t < WISH + 0.5) {
+          const v = (t - WISH) / 0.5;
+          return { free: true, goat: { fx: gx, fy: flipY + (fy - flipY) * E.io(v) - Math.sin(v * Math.PI) * 6, rot: -Math.PI * (1 - E.io(v)), face: "happy" } };
+        }
+        // 合照：走到自己的位置、轉成跟大家一樣面向右邊
+        return { free: true, goat: { fx: gx + (GOAT_ROW - gx) * u, sx: u > 0.5 ? 1 : -1 } };
+      }
+      // 名牌從羊毛裡飛出來的位置（山羊頭卡著的地方）
+      function woolHole(fx, fy) {
+        return [fx - 22, fy - 26];
+      }
+
+      // 依時間算出每一隻的狀態。mode：lazy（坐著）→ rows（排好隊）；u 是排隊的進度 0~1
+      function crowd(t, u, opts) {
+        opts = opts || {};
+        const list = [];
+        ORDER.forEach((kd, n) => {
+          const [rx, ry] = ROWS[kd];
+          const [dx, rot] = LAZY[kd];
+          const v = Math.max(0, Math.min(1, u * 1.6 - (n / ORDER.length) * 0.6)); // 一隻接一隻跳進位置
+          const st = dress({ kind: kd, fx: rx + dx * (1 - v), fy: ry, face: opts.face || "happy" }, t);
+          st.rot = rot * (1 - v);
+          if (kd === "fr" && v < 1) st.fy = ry - 7 * (1 - v); // 青蛙吃太飽翻肚
+          st.hop = jump(v, 0.05, 0.9, 6);
+          if (v > 0 && v < 1) st.face = "happy";
+          if (kd === "sl" && v < 0.5) st.face = "happy";
+          if (kd === "ow") {
+            st.fly = v > 0.2;
+            st.fy = v < 0.2 ? ROW_B - 44 : ry + Math.sin(t * 5) * 1.5;
+            st.fx = v < 0.2 ? ROWS.el[0] + 8 : rx;
+            st.flap = st.fly ? Math.sin(t * 14) * 0.6 : 0;
+            if (v < 0.2) st.face = "sleep";
+          }
+          if (kd === "fx") {
+            st.prop = "coin";
+            st.armRot = -1.0;
+          }
+          if (kd === "sd") st.face = "happy";
+          if (kd === "pair") {
+            const gs = opts.goatAt !== undefined ? goatState(opts.goatAt, st.fx, st.fy, u) : null;
+            if (gs) {
+              st.free = gs.free;
+              st.goat = gs.goat;
+              st.sheepX = st.fx - STUCK;
+            }
+          }
+          // 合照：站好位置之後，有正面的（小白兔、小貓）轉成正面
+          if (opts.front && v >= 1 && kd === "rb") st.front = true;
+          if (opts.each) opts.each(st, n);
+          list.push(st);
+        });
+        return list;
+      }
+      // 每隻畫完就掛上自己的名牌，後排的名牌才不會蓋到前排的臉
+      function drawCrowd(list, t) {
+        list.forEach((st) => tags(drawActor(st, t), t));
+      }
+
+      // ---------- 照片蒙太奇：每張照片是會場裡的一個畫面 ----------
+      // cam：鏡頭 [x, y, z]；only：只放這幾隻（不給就是全部）；at：改站位 {kind: [fx, fy]}
+      // each：改姿勢、表情；before／extra：畫在角色後面／前面的東西；owlOn：貓頭鷹停在誰頭上
+      const NOTE_C = ["#DE6A93", "#5B98D6"];
+      const PHOTOS = [
+        {
+          cap: "開動囉！",
+          cam: [46, 110, 1.5],
+          only: ["cat", "pi", "hm", "ck", "gp", "el"],
+          at: { cat: [40, ROW_F], pi: [60, ROW_F], hm: [22, ROW_F], ck: [72, ROW_F], gp: [8, ROW_F], el: [96, ROW_B] },
+          each: (st) => {
+            if (st.kind === "el") st.trunk = -1.7;
+          },
+          catHold: () => piece("heart", 0, { ax: 6.2, ay: -1, scale: 0.9 }),
+          extra: () => [[18, 88], [52, 84], [70, 92]].forEach(([x, y]) => piece("heart", 0, { ax: x, ay: y, scale: 1.2 })),
+        },
+        {
+          cap: "交換禮物！",
+          cam: [128, 98, 0.85],
+          extra: (t, list) =>
+            list.forEach((st, i) => {
+              if (st.kind === "cat" || st.kind === "ow" || st.kind === "pair" || st.kind === "sn" || i % 2) return;
+              const h = rigToWorld(st, HEAD_TOP[st.kind]);
+              piece("gift6", (i % 3) * 0.1 - 0.1, { ax: h[0], ay: h[1] - 6, scale: 0.55 });
+            }),
+          catHold: () => piece("gift6", 0, { ax: 6.2, ay: -2, scale: 0.6 }),
+        },
+        {
+          cap: "拆到…茶葉蛋？！",
+          cam: [58, 118, 2.4],
+          only: ["mk", "ot", "sq", "cat"],
+          at: { mk: [44, ROW_F], ot: [60, ROW_F], sq: [30, ROW_F], cat: [82, ROW_F] },
+          each: (st) => {
+            if (st.kind === "mk") st.face = "dizzy";
+            if (st.kind === "cat") st.face = "open";
+          },
+          extra: (t, list) => {
+            const mk = list.find((x) => x.kind === "mk");
+            const h = rigToWorld(mk, HEAD_TOP.mk);
+            piece("gift0", 0, { ax: h[0] - 6, ay: h[1] + 20, scale: 0.6 });
+            piece("egg_peeled", 0.2, { ax: h[0] + 1, ay: h[1] - 4, scale: 1.2 });
+            [["ot", 0.8], ["sq", 0.7], ["cat", 1]].forEach(([kd, sc]) => {
+              const s2 = list.find((x) => x.kind === kd);
+              const h2 = kd === "cat" ? [s2.fx + 6, s2.fy - 34] : rigToWorld(s2, HEAD_TOP[kd]);
+              piece("question", -0.15, { ax: h2[0] + 1, ay: h2[1] - 5, scale: sc });
+            });
+          },
+        },
+        {
+          cap: "往上跳跳樂",
+          cam: [96, 108, 1.6],
+          only: ["rb", "sq", "fr", "hm", "qk"],
+          at: { rb: [82, 104], sq: [98, 94], fr: [112, 112], hm: [70, 120], qk: [124, 102] },
+          before: () => {
+            [[82, 104, "#F6B7C8"], [98, 94, "#BFDDF5"], [112, 112, "#FFD36B"], [70, 120, "#BFDDF5"], [124, 102, "#F6B7C8"]].forEach(([x, y, c]) => {
+              ctx.fillStyle = "#8A5236";
+              ctx.fillRect(x - 7, y, 14, 2);
+              ctx.fillStyle = c;
+              ctx.fillRect(x - 7, y, 14, 1);
+            });
+          },
+        },
+        {
+          cap: "鍵盤詠唱師",
+          cam: [192, 116, 2.0],
+          only: ["pg", "ck", "fr", "yn"],
+          at: { pg: [177, 128], ck: [192, 128], fr: [207, 128], yn: [218, 133] },
+          before: () => {
+            for (let i = 0; i < 9; i++) {
+              ctx.fillStyle = "#6B5A55";
+              ctx.fillRect(160 + i * 7, 128, 6.4, 6);
+              ctx.fillStyle = i === 3 ? "#F6B7C8" : "#FFFFFF";
+              ctx.fillRect(160.3 + i * 7, 128.3, 5.8, 5.2);
+            }
+          },
+          extra: () => [[172, 110], [186, 104], [200, 110], [212, 102]].forEach(([x, y], i) => stampCtx(NOTE, x, y, NOTE_C[i % 2], 0.8)),
+        },
+        {
+          cap: "禮物重覆了…處罰！",
+          cam: [124, 98, 1.2],
+          only: ["ln", "br", "fx", "cat"],
+          at: { ln: [96, ROW_B], br: [160, ROW_B], fx: [124, ROW_F], cat: [176, ROW_F] },
+          each: (st) => {
+            if (st.kind === "ln" || st.kind === "br") st.face = "dizzy";
+            if (st.kind === "br") st.sx = -1;
+          },
+          extra: (t, list) => {
+            ["ln", "br"].forEach((kd) => {
+              const s2 = list.find((x) => x.kind === kd);
+              const h = rigToWorld(s2, HEAD_TOP[kd]);
+              piece("gift6", 0.1, { ax: h[0] + (kd === "br" ? -8 : 8), ay: h[1] + 18, scale: 0.8 });
+              piece("sweat", 0, { ax: h[0] + 4, ay: h[1] + 2, scale: 1.2 });
+            });
+            piece("cap_punish", -0.06, { ax: 126, ay: 76, scale: 0.75 });
+          },
+        },
+        {
+          cap: "一起跳舞",
+          cam: [128, 96, 0.75],
+          each: (st, n) => {
+            st.hop = Math.abs(Math.sin(n * 1.3)) * 5;
+            st.rot = Math.sin(n * 2.1) * 0.15;
+          },
+          extra: () => [[50, 70], [92, 64], [150, 66], [190, 62], [226, 70]].forEach(([x, y], i) => stampCtx(NOTE, x, y, NOTE_C[i % 2], 1.3)),
+        },
+        {
+          cap: "樹懶睡著了",
+          cam: [206, 118, 2.6],
+          only: ["sl", "cb"],
+          at: { sl: [216, ROW_F], cb: [196, ROW_M] },
+          each: (st) => {
+            if (st.kind === "sl") {
+              st.rot = -1.45;
+              st.face = "happy";
+            }
+          },
+          extra: (t, list) => {
+            const s2 = list.find((x) => x.kind === "sl");
+            const h = rigToWorld(s2, HEAD_TOP.sl);
+            piece("zzz", 0, { ax: h[0] - 2, ay: h[1] - 6, scale: 1.4 });
+            piece("stink", 0.1, { ax: h[0] + 4, ay: h[1] - 5 });
+            piece("fly", 0, { ax: h[0] + 7, ay: h[1] - 3 });
+          },
+        },
+        { cap: "山羊還是卡著", cam: [54, 110, 1.8], only: ["pair", "mk", "ot"] },
+        {
+          cap: "金幣還給魷魚",
+          cam: [122, 120, 2.6],
+          only: ["fx", "sd"],
+          at: { fx: [112, ROW_F], sd: [132, ROW_F] },
+          each: (st) => {
+            if (st.kind === "fx") st.armRot = -1.35;
+          },
+          extra: () => piece("heart", 0, { ax: 133, ay: 108, scale: 1.4 }),
+        },
+        {
+          cap: "矮袋鼠又跌倒",
+          cam: [96, 126, 3.0],
+          only: ["qk", "rb"],
+          at: { qk: [100, ROW_F], rb: [86, ROW_F] },
+          each: (st) => {
+            if (st.kind === "qk") {
+              st.rot = 1.45;
+              st.face = "dizzy";
+            }
+          },
+        },
+        {
+          cap: "貓頭鷹在哪？",
+          cam: [30, 64, 2.0],
+          only: ["gf", "ow", "cr"],
+          each: (st) => {
+            if (st.kind === "ow") Object.assign(st, { fly: false, face: "sleep" });
+          },
+          owlOn: "gf",
+        },
+        { cap: "大象的蛋殼", cam: [116, 94, 2.0], only: ["el", "ck", "sn"], at: { ck: [110, 82] } },
+        { cap: "最開心的一天", cam: [128, 112, 2.0] },
+      ];
+      function drawPhotoScene(p) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = "#1A1420";
+        ctx.fillRect(0, 0, 1920, 1080);
+        const t = 3.3;
+        hall(t);
+        camera(WH, p.cam[0], p.cam[1], p.cam[2]);
+        banner(t);
+        giftPile(t);
+        if (p.before) p.before();
+        let list = crowd(t, 1, {
+          each: (st, n) => {
+            st.face = "happy";
+            if (p.at && p.at[st.kind]) [st.fx, st.fy] = p.at[st.kind];
+            if (p.each) p.each(st, n);
+          },
+        });
+        if (p.only) list = list.filter((st) => p.only.includes(st.kind));
+        if (p.owlOn) {
+          // 貓頭鷹停在某隻的頭上睡覺（最後畫）
+          const host = list.find((x) => x.kind === p.owlOn);
+          const ow = list.find((x) => x.kind === "ow");
+          const h = rigToWorld(host, HEAD_TOP[p.owlOn]);
+          [ow.fx, ow.fy] = [h[0] - 1, h[1] + 2];
+          list = list.filter((x) => x !== ow).concat([ow]);
+        }
+        const cat = list.find((x) => x.kind === "cat");
+        if (cat && p.catHold) cat.cat = { armRot: -1.3, hold: p.catHold };
+        drawCrowd(list, t);
+        if (p.extra) p.extra(t, list);
+      }
+
+      // ---------- 會場段：心滿意足 → 掛名牌 → 預祝 → 熱淚盈眶 → 大合照 ----------
+      function catTag(t) {
+        return t >= TOSS_HIT ? 1 + pop(t, TOSS_HIT, 0.3, 0.5) : 0;
+      }
+      function sceneHall(t, forPhoto) {
+        hall(t);
+        // 鏡頭：全景 → 對準仙鶴與小貓 → 拉遠歡呼 → 推到小貓臉上 → 拉遠排隊
+        const cx = path(t, [[C0, 128], [TOSS - 1.2, 128], [TOSS - 0.6, 100, "io"], [TOSS_HIT, 100], [TOSS_HIT + 0.6, 112, "io"], [TOSS_HIT + 1.6, 122, "io"], [WISH, 128, "io"], [D0, 128], [D0 + 0.7, 130, "io"], [E0 - 0.6, 130], [E0, 128, "io"]]);
+        const cy = path(t, [[C0, 72], [TOSS - 1.2, 72], [TOSS - 0.6, 96, "io"], [TOSS_HIT, 96], [TOSS_HIT + 1.0, 110, "io"], [WISH, 72, "io"], [D0, 72], [D0 + 0.7, 112, "io"], [E0 - 0.6, 112], [E0, 72, "io"]]);
+        const cz = path(t, [[C0, WIDE], [TOSS - 1.2, WIDE], [TOSS - 0.6, 1.0, "io"], [TOSS_HIT, 1.0], [TOSS_HIT + 1.0, 1.7, "io"], [WISH, WIDE, "io"], [D0, WIDE], [D0 + 0.7, 2.5, "io"], [E0 - 0.6, 2.5], [E0, WIDE, "io"]]);
+        if (forPhoto) camera(WH, 128, 72, WIDE);
+        else camera(WH, cx, cy, cz);
+        banner(t);
+        giftPile(t);
+        const u = tw(t, E0, E0 + 1.4, 0, 1, "lin");
+        const front = t >= E0 + 1.0;
+        const list = crowd(t, u, {
+          goatAt: t,
+          front,
+          each: (st, n) => {
+            // 吃飽：慢慢呼吸、冒愛心
+            if (u === 0) st.sy = 1 + Math.sin(t * 2 + n) * 0.02;
+            // 山羊使勁拔的時候，旁邊的綿羊也被拖得歪一邊
+            if (st.kind === "pair" && t >= TOSS - 0.9 && t < TOSS) st.hop = Math.abs(Math.sin(t * 25)) * 1.5;
+            // 預祝：大家一起跳
+            if (t >= WISH && t < D0) {
+              st.hop = (st.hop || 0) + Math.abs(Math.sin((t - WISH) * 5 + n * 0.5)) * (st.k ? 5 : 3);
+              st.rot = 0;
+              if (st.kind === "fr") st.fy = ROW_F;
+              if (st.kind === "pair") st.hop = 0; // 山羊翻回來的跳另外算
+            }
+            // 合照倒數：最後一秒大家都笑開
+            if (t >= COUNT && t < SNAP - 1.0) st.face = st.kind === "ow" ? "awake" : "open";
+          },
+        });
+        const cat = list.find((s) => s.kind === "cat");
+        cat.tag = catTag(t);
+        cat.face = "happy";
+        cat.cat = { armRot: -0.15 };
+        // 熱淚盈眶：小貓轉頭面向鏡頭，閉著眼笑、眼淚一直噴出來
+        const crying = t >= D0 + 0.5 && t < E0 - 0.2;
+        if (crying) {
+          const turnIn = tw(t, D0 + 0.5, D0 + 0.62, 1, 0, "in");
+          cat.cat.head = t < D0 + 0.62 ? "s_head_happy_bow" : "f_head_happy_bow";
+          cat.cat.headSx = t < D0 + 0.62 ? turnIn : tw(t, D0 + 0.62, D0 + 0.75, 0, 1, "out");
+          cat.cat.headRot = Math.sin(t * 9) * 0.03;
+          cat.cat.armRot = -0.35 + Math.sin(t * 7) * 0.08;
+          cat.hop = Math.abs(Math.sin(t * 7)) * 0.4 + jump(t, D0 + 2.2, 0.35, 1.5); // 感動到抽一下
+        }
+        if (t >= TOSS_HIT && t < TOSS_HIT + 1.0) cat.hop = jump(t, TOSS_HIT, 0.45, 3);
+        if (front) {
+          // 合照：小貓轉正面，兩手舉起來
+          const smile = t >= SNAP - 1.0;
+          cat.cat = { view: "front", head: smile ? "f_head_happy_bow" : "f_head_open_bow", pawL: smile ? [13, 15] : [15, 21], pawR: smile ? [31, 15] : [29, 21], tail: Math.sin(t * 2) * 0.12 };
+        }
+        drawCrowd(list, t);
+
+        if (forPhoto) return;
+        // 吃飽冒愛心
+        if (t < TOSS - 1.2) {
+          for (let i = 0; i < 8; i++) {
+            const kd = ORDER[(i * 5 + 3) % ORDER.length];
+            const s = list.find((x) => x.kind === kd);
+            if (!s || !HEAD_TOP[kd]) continue;
+            const h = rigToWorld(s, HEAD_TOP[kd]);
+            const v = ((t - C0) * 0.6 + i * 0.37) % 1;
+            piece("heart", 0, { ax: h[0] + 2, ay: h[1] - 3 - v * 10, scale: Math.sin(v * Math.PI) * 1.2 });
+          }
+        }
+        // 名牌從羊毛裡（山羊頭剛拔出來的洞）飛到小貓脖子上；羊毛噴出來一小撮
+        if (t >= TOSS && t < TOSS_HIT) {
+          const b = woolHole(ROWS.pair[0], ROWS.pair[1]);
+          const n = [cat.fx + 1, cat.fy - 14];
+          const v = (t - TOSS) / (TOSS_HIT - TOSS);
+          piece("name_tag", v * 9, { ax: b[0] + (n[0] - b[0]) * v, ay: b[1] + (n[1] - b[1]) * v - Math.sin(v * Math.PI) * 16 });
+        }
+        if (t >= TOSS && t < TOSS + 0.7) {
+          const b = woolHole(ROWS.pair[0], ROWS.pair[1]);
+          const v = (t - TOSS) / 0.7;
+          for (let i = 0; i < 7; i++) {
+            const a = -Math.PI * (0.1 + 0.8 * hash(i, 4, 1));
+            ctx.fillStyle = i % 2 ? "#FFFFFF" : "#F4ECDD";
+            ctx.fillRect(b[0] + Math.cos(a) * v * 14, b[1] + Math.sin(a) * v * 10 + v * v * 8, 2, 2);
+          }
+          piece("sparkle", 0, { ax: b[0], ay: b[1] - 2, scale: Math.sin(v * Math.PI) * 1.4 });
+        }
+        // 四腳朝天的山羊冒暈眩星星
+        if (t >= TOSS + GOAT_FLY && t < WISH) {
+          const gx = ROWS.pair[0] + GOAT_OUT;
+          for (let i = 0; i < 3; i++) {
+            const a = t * 4 + (i * Math.PI * 2) / 3;
+            piece("sparkle", 0, { ax: gx - 6 + Math.cos(a) * 6, ay: ROWS.pair[1] - 6 + Math.sin(a) * 2, scale: 0.7 });
+          }
+        }
+        if (t >= TOSS_HIT && t < TOSS_HIT + 0.6) {
+          const v = (t - TOSS_HIT) / 0.6;
+          piece("sparkle", 0, { ax: cat.fx + 6, ay: cat.fy - 30 - v * 4, scale: Math.sin(v * Math.PI) * 1.6 });
+        }
+        // 眼淚：從兩隻眼睛往外噴的水珠，臉頰上有兩條淚痕
+        if (crying && t >= D0 + 0.75) {
+          const ex = cat.fx;
+          const ey = cat.fy - 32 - (cat.hop || 0);
+          ctx.fillStyle = "#96CEE8";
+          [[-6.5, 1], [5.5, -1]].forEach(([dx, side]) => {
+            ctx.fillRect(ex + dx, ey + 12, 1, 3);
+            for (let i = 0; i < 4; i++) {
+              const v = ((t - D0) * 1.6 + i / 4) % 1;
+              const x = ex + dx + side * v * 7;
+              const y = ey + 12 - Math.sin(v * Math.PI) * 2 + v * v * 9;
+              ctx.fillRect(x, y, 1, 1);
+              ctx.fillStyle = "#FFFFFF";
+              ctx.fillRect(x, y, 0.5, 0.5);
+              ctx.fillStyle = "#96CEE8";
+            }
+          });
+          piece("heart", 0, { ax: ex + 12, ay: ey + 2 - ((t - D0) % 1) * 4, scale: 0.8 });
+        }
+      }
+      // 畫面上的字卡、倒數、取景框（不跟鏡頭）
+      function hallOverlay(t) {
+        ctx.setTransform(P, 0, 0, P, 0, 0);
+        if (t >= TOSS_HIT && t < WISH - 0.1) {
+          const s = tw(t, TOSS_HIT, TOSS_HIT + 0.2, 0, 1, "back") * tw(t, WISH - 0.3, WISH - 0.1, 1, 0, "in");
+          piece("cap_eva", 0, { ax: 64, ay: 59, scale: s * 0.9 });
+        }
+        if (t >= WISH && t < D0 + 0.4) {
+          const s = tw(t, WISH, WISH + 0.3, 0, 1, "back") * tw(t, D0 + 0.1, D0 + 0.4, 1, 0, "in");
+          piece("cap_wish", Math.sin(t * 3) * 0.03, { ax: 64, ay: 15, scale: s * 1.25 });
+        }
+        confetti(t, WISH, 3.4, 110, 7, 128, 72);
+        // 取景框與倒數
+        if (t >= E0 + 1.0 && t < SNAP) {
+          ctx.fillStyle = "#FFFFFF";
+          [[4, 4, 1, 1], [124, 4, -1, 1], [4, 68, 1, -1], [124, 68, -1, -1]].forEach(([x, y, sx, sy]) => {
+            ctx.fillRect(Math.min(x, x + sx * 8), y - (sy < 0 ? 1 : 0), 8, 1);
+            ctx.fillRect(x - (sx < 0 ? 1 : 0), Math.min(y, y + sy * 8), 1, 8);
+          });
+          if (Math.floor(t * 2) % 2) {
+            ctx.fillStyle = "#E0414C";
+            ctx.fillRect(8, 7, 2, 2);
+          }
+        }
+        if (t >= COUNT && t < SNAP) {
+          const n = 3 - Math.floor(t - COUNT);
+          const v = (t - COUNT) % 1;
+          const s = 5 * (1 + pop(t, COUNT + (3 - n), 0.25, 0.4));
+          const rows = DIGIT[n];
+          ctx.globalAlpha = 1 - Math.max(0, v - 0.75) * 4;
+          [[-0.7, 0], [0.7, 0], [0, -0.7], [0, 0.7]].forEach(([dx, dy]) => stampCtx(rows, 64 - 1.5 * s + dx, 22 + dy, "#FFFFFF", s));
+          stampCtx(rows, 64 - 1.5 * s, 22, "#DE6A93", s);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // ---------- 最後一幕：Eva 背對鏡頭拿著合照，旁邊多了一隻小小貓 ----------
+      function sceneEnding(t) {
+        const u = t - F0;
+        room(t);
+        camera(WR, 64, 36, 1 + tw(u, 2, 10, 0, 0.06, "lin"));
+        ctx.setTransform(P, 0, 0, P, 0, 0);
+        ctx.fillStyle = "rgba(255, 170, 90, 0.16)";
+        ctx.fillRect(0, 0, 128, 72);
+        const push = 1 + tw(u, 2.4, 10, 0, 0.05, "lin");
+        ctx.setTransform(P * push, 0, 0, P * push, 960 * (1 - push), 540 * (1 - push));
+        // 照片：從整個畫面（剛拍好）縮到 Eva 手上
+        const k = tw(u, 0.6, 2.6, 0, 1, "io");
+        const pw = 128 * 1.08 + (56 - 128 * 1.08) * k;
+        const pcx = 64;
+        const pcy = 36 + (25 - 36) * k + (1 - k) * 4;
+        const rot = -0.03 * k + Math.sin(u * 1.3) * 0.004 * k;
+        const img = SHOTS.group;
+        ctx.save();
+        ctx.scale(1 / P, 1 / P);
+        polaroid(img, pcx * P, pcy * P, pw * P, rot, k > 0.6 ? "好孕敲門・交換禮物 Party" : "");
+        ctx.restore();
+        // 兩顆頭從畫面下緣往上冒（頭的下緣在畫面外，看起來是身體在鏡頭外）。
+        // 小小貓慢慢挪到 Eva 旁邊，兩顆頭靠在一起看照片
+        const rise = tw(u, 1.6, 3.0, 26, 0, "out");
+        const kit = tw(u, 2.4, 3.6, 30, 0, "out");
+        const lean = tw(u, 4.6, 6.0, 0, 1, "io");
+        const kx = 88 - 12 * lean;
+        piece("f_back", -0.14 * lean + Math.sin(u * 1.7) * 0.015, { ax: kx, ay: 75 + kit, scale: 1.35 });
+        // Eva 的後腦勺（只看得到頭和紅色蝴蝶結），耳朵偶爾抖一下，最後往小小貓那邊歪
+        const twitch = u > 4.0 && u < 4.25 ? Math.sin((u - 4.0) * 40) * 0.03 : 0;
+        piece("f_back_bow", -0.04 + twitch + 0.1 * lean, { ax: 40, ay: 76 + rise, scale: 1.9 });
+        // 兩顆頭中間冒出愛心
+        if (u > 6.0) {
+          for (let i = 0; i < 3; i++) {
+            const v = ((u - 6.0) * 0.45 + i / 3) % 1;
+            piece("heart", Math.sin(u * 3 + i) * 0.2, { ax: 70 + Math.sin(v * 6 + i) * 2, ay: 60 - v * 9, scale: Math.sin(v * Math.PI) * 1.3 });
+          }
+        }
+        // 閃光退去
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const flash = tw(u, 0, 0.9, 1, 0, "out");
+        if (flash > 0) {
+          ctx.fillStyle = "rgba(255, 255, 255, " + flash.toFixed(3) + ")";
+          ctx.fillRect(0, 0, 1920, 1080);
+        }
+        const dark = tw(u, 8.6, 10, 0, 1, "in");
+        if (dark > 0) {
+          ctx.fillStyle = "rgba(26, 20, 32, " + dark.toFixed(3) + ")";
+          ctx.fillRect(0, 0, 1920, 1080);
+        }
+      }
+
+      // ---------- 片尾名單 ----------
+      const FONT = "'Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC', sans-serif";
+      const CREDIT_ROW = 120;
+      const CREDIT_ROWS = Math.ceil(CAST.length / 2);
+      const CREDIT_TOP = 1080 + 40; // 標題一開始在畫面下方外面
+      const DIRECTOR_Y = 260 + CREDIT_ROWS * CREDIT_ROW + 120;
+      const THANKS_Y = DIRECTOR_Y + 420;
+      const SCROLL_END = CREDIT_TOP + THANKS_Y - 540; // 感謝那一行捲到畫面中間就停
+      const SCROLL_V = 260; // px / 秒
+      const THANKS_AT = G0 + SCROLL_END / SCROLL_V;
+      // 在 (x, y)（畫面像素，腳底）畫一隻小小的角色
+      function miniActor(kd, x, y, t) {
+        let h;
+        if (kd === "cat") h = 34;
+        else if (kd === "sn") h = 49;
+        else h = RIG[kd].h * (kd === "ln" || kd === "br" ? BIG : kd === "dg" ? 1.3 : kd === "sd" ? 0.85 : 1);
+        const s = Math.min(4.2, 80 / h);
+        ctx.setTransform(s, 0, 0, s, x, y);
+        const hop = Math.abs(Math.sin(t * 4 + x * 0.01 + y * 0.02)) * 1.2;
+        if (kd === "cat") return drawCat({ x: -22, y: -33 - hop, head: "s_head_happy_bow", armRot: -0.15, tail: Math.sin(t * 2) * 0.12 });
+        if (kd === "sn") return drawSnake({ fx: 0, fy: 0, face: "happy", hop });
+        const st = dress({ kind: kd, fx: 0, fy: 0, face: kd === "ow" ? "happy" : "happy", hop }, t);
+        if (kd === "gt") st.headRot = 0;
+        if (kd === "sh") st.wool = 1.3;
+        if (kd === "fx") {
+          st.prop = "coin";
+          st.armRot = -1.0;
+        }
+        drawAnimal(st);
+      }
+      function sceneCredits(t) {
+        const u = t - G0;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = "#1A1420";
+        ctx.fillRect(0, 0, 1920, 1080);
+        // 背景的小星星
+        for (let i = 0; i < 60; i++) {
+          const a = 0.3 + 0.5 * Math.abs(Math.sin(t * 1.5 + i));
+          ctx.fillStyle = "rgba(255, 230, 240, " + a.toFixed(2) + ")";
+          ctx.fillRect(Math.floor(hash(i, 3, 1) * 1920), Math.floor(hash(i, 3, 2) * 1080), 6, 6);
+        }
+        const scroll = Math.min(SCROLL_END, u * SCROLL_V);
+        const top = CREDIT_TOP - scroll;
+        ctx.textBaseline = "middle";
+        // 標題
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#F6B7C8";
+        ctx.font = "bold 76px " + FONT;
+        ctx.fillText("好孕敲門・交換禮物 Party", 960, top);
+        ctx.fillStyle = "#BFDDF5";
+        ctx.font = "bold 44px " + FONT;
+        ctx.fillText("演 出 名 單", 960, top + 110);
+        // 兩欄：角色（右對齊）· 小人 · 演員（左對齊）
+        CAST.forEach(([kd, role, name], i) => {
+          const col = i % 2;
+          const row = Math.floor(i / 2);
+          const cx = col ? 1380 : 540;
+          const y = top + 260 + row * CREDIT_ROW;
+          if (y < -100 || y > 1180) return;
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.textAlign = "right";
+          ctx.fillStyle = "#E2DCCE";
+          ctx.font = "bold 40px " + FONT;
+          ctx.fillText(role, cx - 90, y);
+          ctx.textAlign = "left";
+          ctx.fillStyle = kd === "cat" ? "#F6B7C8" : "#FFFFFF";
+          ctx.font = "bold 48px " + FONT;
+          ctx.fillText(name, cx + 90, y);
+          miniActor(kd, cx, y + 38, t);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+        });
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#BFDDF5";
+        ctx.font = "bold 44px " + FONT;
+        ctx.fillText("導 演", 960, top + DIRECTOR_Y - 70);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = "bold 72px " + FONT;
+        ctx.fillText("Callami01", 960, top + DIRECTOR_Y + 20);
+        // 感謝：捲到中間停住，旁邊冒愛心
+        const ty = top + THANKS_Y;
+        const s = 1 + pop(t, THANKS_AT, 0.08, 0.6);
+        ctx.save();
+        ctx.translate(960, ty);
+        ctx.scale(s, s);
+        ctx.fillStyle = "#F6B7C8";
+        ctx.font = "bold 84px " + FONT;
+        ctx.fillText("感謝 VR20 大家共襄盛舉", 0, 0);
+        ctx.restore();
+        if (t >= THANKS_AT) {
+          ctx.setTransform(P, 0, 0, P, 0, 0);
+          for (let i = 0; i < 6; i++) {
+            const v = ((t - THANKS_AT) * 0.5 + i / 6) % 1;
+            const x = i % 2 ? 14 + i * 2 : 114 - i * 2;
+            piece("heart", Math.sin(t * 3 + i) * 0.2, { ax: x, ay: ty / P + 8 - v * 22, scale: Math.sin(v * Math.PI) * 2 });
+          }
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
+        const fade = tw(t, DUR - 1.2, DUR, 0, 1, "in");
+        if (fade > 0) {
+          ctx.fillStyle = "rgba(26, 20, 32, " + fade.toFixed(3) + ")";
+          ctx.fillRect(0, 0, 1920, 1080);
+        }
+      }
+
+      // ---------- 照片蒙太奇 ----------
+      // 已經落定的照片不會再動：桌巾＋落定的那幾張先合成一張圖快取，每格只要重畫正在掉下來的那張
+      const PILE = document.createElement("canvas");
+      PILE.width = 1920;
+      PILE.height = 1080;
+      let pileCount = -1;
+      function photoPose(i) {
+        return {
+          rot: (hash(i, 9, 1) - 0.5) * 0.22,
+          cx: 960 + (hash(i, 9, 2) - 0.5) * 300,
+          cy: 500 + (hash(i, 9, 3) - 0.5) * 140,
+          d: Math.min(0.22, PHOTO_D[i] * 0.4),
+        };
+      }
+      function drawPhoto(i, v) {
+        const q = photoPose(i);
+        ctx.globalAlpha = Math.min(1, v * 3);
+        polaroid(SHOTS["photo" + i], q.cx, q.cy, 1180 * (1.25 - 0.25 * v), q.rot * v + (1 - v) * q.rot * 2, PHOTOS[i].cap);
+        ctx.globalAlpha = 1;
+      }
+      function sceneMontage(t) {
+        let settled = 0;
+        while (settled < PHOTOS.length && t >= PHOTO_AT[settled] + photoPose(settled).d) settled++;
+        if (settled !== pileCount) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          let from = 0;
+          if (pileCount >= 0 && settled > pileCount) {
+            // 往後播：在原本那疊上面加新落定的
+            ctx.drawImage(PILE, 0, 0);
+            from = pileCount;
+          } else {
+            // 粉紅格子桌巾（第一次或往回拖時整疊重畫）
+            ctx.fillStyle = "#FCE6EC";
+            ctx.fillRect(0, 0, 1920, 1080);
+            ctx.fillStyle = "#F9CCD8";
+            for (let y = 0; y < 1080; y += 120) for (let x = ((y / 120) % 2) * 120; x < 1920; x += 240) ctx.fillRect(x, y, 120, 120);
+          }
+          for (let i = from; i < settled; i++) drawPhoto(i, 1);
+          const pc = PILE.getContext("2d");
+          pc.clearRect(0, 0, 1920, 1080);
+          pc.drawImage(out, 0, 0);
+          pileCount = settled;
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(PILE, 0, 0);
+        // 正在掉下來的那張，掉下來的瞬間快門閃一下
+        if (settled < PHOTOS.length && t >= PHOTO_AT[settled]) {
+          const i = settled;
+          const t0 = PHOTO_AT[i];
+          const d = photoPose(i).d;
+          drawPhoto(i, tw(t, t0, t0 + d, 0, 1, "out"));
+          const f = tw(t, t0, t0 + Math.min(0.12, d), 0.45, 0, "out");
+          if (f > 0) {
+            ctx.fillStyle = "rgba(255, 255, 255, " + f.toFixed(3) + ")";
+            ctx.fillRect(0, 0, 1920, 1080);
+          }
+        }
+        // 結束：最後一張停一下，整疊淡成白色，接回會場
+        const white = tw(t, B_END - 0.35, B_END, 0, 1, "in");
+        if (white > 0) {
+          ctx.fillStyle = "rgba(255, 255, 255, " + white.toFixed(3) + ")";
+          ctx.fillRect(0, 0, 1920, 1080);
+        }
+      }
+
+      // 用到的照片先拍好（會用到主畫布，所以在每一格開始畫之前做）：提早 3 秒開始、每一格只拍一張，
+      // 避免播放時卡一下；直接拖到蒙太奇中間時，已經該出現的照片當場補拍
+      function ensureShots(t) {
+        if (t >= B0 - 3 && t < B_END) {
+          let one = false;
+          PHOTOS.forEach((p, i) => {
+            if (SHOTS["photo" + i]) return;
+            if (t >= PHOTO_AT[i] - 0.1 || !one) {
+              shot("photo" + i, () => drawPhotoScene(p));
+              one = true;
+            }
+          });
+        }
+        if (t >= SNAP - 2.5 && !SHOTS.group) {
+          shot("group", () => {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.fillStyle = "#1A1420";
+            ctx.fillRect(0, 0, 1920, 1080);
+            sceneHall(SNAP - 0.5, true);
+          });
+        }
+      }
+
+      function render(t) {
+        ensureShots(t);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = "#1A1420";
+        ctx.fillRect(0, 0, 1920, 1080);
+        if (t < A_END) {
+          sceneArrive(t);
+          // 轉場：白色閃一下切到照片
+          const w = tw(t, A_END - 0.3, A_END, 0, 1, "in");
+          if (w > 0) {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.fillStyle = "rgba(255, 255, 255, " + w.toFixed(3) + ")";
+            ctx.fillRect(0, 0, 1920, 1080);
+          }
+        } else if (t < B_END) {
+          sceneMontage(t);
+        } else if (t < F0) {
+          sceneHall(t);
+          hallOverlay(t);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          const w = tw(t, C0, C0 + 0.5, 1, 0, "out");
+          if (w > 0) {
+            ctx.fillStyle = "rgba(255, 255, 255, " + w.toFixed(3) + ")";
+            ctx.fillRect(0, 0, 1920, 1080);
+          }
+        } else if (t < G0) {
+          sceneEnding(t);
+        } else {
+          sceneCredits(t);
+        }
+      }
+
+      (window.EPISODES = window.EPISODES || []).push({ no: 8, title: '大結局', render, duration: DUR });
+    })();
