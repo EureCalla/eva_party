@@ -202,6 +202,11 @@
       return;
     }
     sessionToken = r.data.token;
+    // 還沒設自己的暗號：回首頁登入，那裡會先請他改暗號
+    if (r.data.must_change) {
+      location.href = "/";
+      return;
+    }
     const s = await api("/api/state");
     enterExchange(s.data);
   });
@@ -758,6 +763,11 @@
     setInterval(updateTimer, 250);
     setInterval(async () => {
       const r = await api("/api/state");
+      // 切換階段時所有人都被登出：回首頁重新登入
+      if (r.status === 401) {
+        location.href = "/";
+        return;
+      }
       if (!r.ok) return;
       // 管理者把階段切走：回首頁（禮物牆）。首頁不記登入，要重新登入
       if (r.data.stage !== EXCHANGE_STAGE) {

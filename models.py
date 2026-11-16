@@ -26,6 +26,7 @@ from migrations import (
     m007_add_minigame,
     m008_add_game_kind,
     m009_add_exchange_transfers,
+    m010_add_password_changed,
 )
 
 PERMISSIONS = ("user", "admin")
@@ -33,6 +34,7 @@ EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
 DESCRIPTION_MAX = 50  # 禮物描述字數上限
 DESCRIBE_STAGES = ("reveal", "exchange")  # 可以寫／改禮物描述的階段
 DESCRIPTION_PUBLIC_STAGES = ("exchange", "feast")  # 描述對所有人公開的階段（聚光燈講話框）
+PRIVATE_PASSWORD_STAGE = "reveal"  # 從這個階段起：一般人登入要先改一次暗號、管理頁看不到別人的暗號
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS players (
@@ -101,6 +103,7 @@ class GameDB:
             m007_add_minigame.apply(self.conn)
             m008_add_game_kind.apply(self.conn)
             m009_add_exchange_transfers.apply(self.conn)
+            m010_add_password_changed.apply(self.conn)
         # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
         self.round_sec: float = cms.EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
@@ -194,7 +197,7 @@ class GameDB:
                 self.conn.execute(
                     "UPDATE players SET animal = ?, password = ?, permission = ?, gift_order = ?, claimed_by = NULL, "
                     "claimed_at = NULL, label = NULL, labeled_at = NULL, description = NULL, described_at = NULL, "
-                    "is_deleted = 0, deleted_at = NULL WHERE id = ?",
+                    "password_changed = 0, is_deleted = 0, deleted_at = NULL WHERE id = ?",
                     (animal, password, permission, order, old["id"]),
                 )
                 new_id = old["id"]
@@ -217,13 +220,15 @@ class GameDB:
         permission: str,
         password: str | None,
         role_passwords: dict[str, str],
+        keep_password: bool = False,
     ) -> None:
         """Edit a player's name, animal, permission and password; claims and labels are kept.
 
         When the permission changes and no new password was typed, the password
         switches to that role's default (``role_passwords``). A typed password
-        always wins. Raises ValueError on empty fields, an unknown permission or
-        a duplicate name.
+        always wins. With ``keep_password`` (the password is hidden from the
+        admin) the password is never touched. Raises ValueError on empty fields,
+        an unknown permission or a duplicate name.
         """
         en_name, animal = en_name.strip(), animal.strip()
         if not en_name or not animal:
@@ -241,17 +246,19 @@ class GameDB:
             ).fetchone()
             if dup:
                 raise ValueError(f"{en_name} 已經有人用了")
-            typed = (password or "").strip()
-            if password is not None and not typed:
+            typed = "" if keep_password else (password or "").strip()
+            if password is not None and not keep_password and not typed:
                 raise ValueError("暗號不能是空白")
             if typed and typed != row["password"]:
                 new_password = typed
-            elif permission != row["permission"]:
+            elif permission != row["permission"] and not keep_password:
                 new_password = role_passwords[permission]
             else:
                 new_password = row["password"]
+            # 管理者幫忙改了暗號＝不再是本人設的，（公布標籤起）下次登入要再改一次
+            changed_flag = "password_changed = 0, " if new_password != row["password"] else ""
             self.conn.execute(
-                "UPDATE players SET en_name = ?, animal = ?, permission = ?, password = ? WHERE id = ?",
+                f"UPDATE players SET {changed_flag}en_name = ?, animal = ?, permission = ?, password = ? WHERE id = ?",
                 (en_name, animal, permission, new_password, player_id),
             )
             self.conn.commit()
@@ -287,8 +294,19 @@ class GameDB:
             "WHERE is_deleted = 0 ORDER BY gift_order"
         ).fetchall()
 
-    def admin_players(self) -> list[dict[str, Any]]:
-        """Return players for the admin page, alphabetical, with password, guess status and label."""
+    def passwords_private(self) -> bool:
+        """Return True from PRIVATE_PASSWORD_STAGE on: passwords are personal and hidden from admins."""
+        stage = self.get_stage()
+        keys = cms.STAGE_KEYS
+        return stage in keys and keys.index(stage) >= keys.index(PRIVATE_PASSWORD_STAGE)
+
+    def admin_players(self, viewer_id: int | None = None) -> list[dict[str, Any]]:
+        """Return players for the admin page, alphabetical, with password, guess status and label.
+
+        From PRIVATE_PASSWORD_STAGE on, every password except the viewer's own
+        is left out (``password`` is None and ``masked`` is True).
+        """
+        private = self.passwords_private()
         rows = self.conn.execute(
             "SELECT p.id, p.en_name, p.animal, p.permission, p.password, g.label AS my_label, g.id AS my_gift "
             "FROM players p LEFT JOIN players g ON g.claimed_by = p.id AND g.is_deleted = 0 "
@@ -300,7 +318,8 @@ class GameDB:
                 "en_name": r["en_name"],
                 "animal": r["animal"],
                 "admin": r["permission"] == "admin",
-                "password": r["password"],
+                "password": None if private and r["id"] != viewer_id else r["password"],
+                "masked": private and r["id"] != viewer_id,
                 "guessed": r["my_gift"] is not None,
                 "label": r["my_label"],
             }
@@ -323,8 +342,10 @@ class GameDB:
         """Set every non-admin's password at once (admins only); returns how many were changed.
 
         The value is also saved as settings.user_password, so players added or
-        demoted later get the same password. Raises PermissionError for
-        non-admins and ValueError for a blank password.
+        demoted later get the same password. Everyone it overwrites counts as
+        not having set their own password any more. Raises PermissionError for
+        non-admins, ValueError for a blank password and RuntimeError from
+        PRIVATE_PASSWORD_STAGE on (it would wipe everyone's own password).
         """
         password = password.strip()
         if not password:
@@ -333,8 +354,11 @@ class GameDB:
             player = self.player_by_token(token) if token else None
             if player is None or player["permission"] != "admin":
                 raise PermissionError("只有管理者可以使用")
+            if self.passwords_private():
+                raise RuntimeError("公布標籤之後大家都有自己的暗號，不能再一次全改")
             cur = self.conn.execute(
-                "UPDATE players SET password = ? WHERE permission = 'user' AND is_deleted = 0", (password,)
+                "UPDATE players SET password = ?, password_changed = 0 WHERE permission = 'user' AND is_deleted = 0",
+                (password,),
             )
             self.conn.execute(
                 "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('user_password', ?, ?, ?) "
@@ -388,6 +412,9 @@ class GameDB:
         Entering the exchange stage from another stage reshuffles the draw
         order, seeded with the switch time (yyyymmddhhmm), so going back and
         entering again gives a new order.
+
+        Every real switch (forward or back) logs everyone out, the admin who
+        switched included, so each player starts again from the login page.
         """
         if stage not in allowed:
             return "invalid", {}
@@ -410,6 +437,8 @@ class GameDB:
             if stage == EXCHANGE_STAGE and before != EXCHANGE_STAGE:
                 self._shuffle_draw_order(None, player["id"])
                 self._reset_exchange()  # 重新進入交換禮物＝整局重來
+            if stage != before:
+                self._logout_all()
         print(f"[models] stage -> {stage} by {player['en_name']}")
         return "ok", {}
 
@@ -444,6 +473,67 @@ class GameDB:
             "WHERE s.token = ? AND s.is_deleted = 0 AND p.is_deleted = 0",
             (token,),
         ).fetchone()
+
+    def _logout_all(self) -> None:
+        """End every login session (soft delete); caller holds the lock."""
+        cur = self.conn.execute(
+            "UPDATE sessions SET is_deleted = 1, deleted_at = ? WHERE is_deleted = 0", (utc_now(),)
+        )
+        self.conn.commit()
+        self._token_ids.clear()
+        print(f"[models] logged everyone out: {cur.rowcount} sessions")
+
+    def must_change_password(self, token: str | None) -> bool:
+        """Return True when this session's player must set their own password before playing.
+
+        Only non-admins who still have the shared password, and only from
+        PRIVATE_PASSWORD_STAGE on.
+        """
+        player = self.player_by_token(token) if token else None
+        if player is None or player["permission"] != "user" or player["password_changed"]:
+            return False
+        return self.passwords_private()
+
+    def change_password(self, token: str, password: str, confirm: str) -> str:
+        """Set the caller's own password; returns ok / unknown / empty / mismatch.
+
+        The two entries must match and must not be blank; nothing else is checked.
+        """
+        password, confirm = password.strip(), confirm.strip()
+        with self.lock:
+            player = self.player_by_token(token) if token else None
+            if player is None:
+                return "unknown"
+            if not password:
+                return "empty"
+            if password != confirm:
+                return "mismatch"
+            self.conn.execute(
+                "UPDATE players SET password = ?, password_changed = 1 WHERE id = ?", (password, player["id"])
+            )
+            self.conn.commit()
+        print(f"[models] password changed by {player['en_name']}")
+        return "ok"
+
+    def reset_password(self, player_id: int, role_passwords: dict[str, str]) -> str:
+        """Put a player's password back to their role's default; returns the player's name.
+
+        The player has to set their own password again at the next login (from
+        PRIVATE_PASSWORD_STAGE on). Raises ValueError for an unknown player.
+        """
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT en_name, permission FROM players WHERE id = ? AND is_deleted = 0", (player_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("找不到這個使用者")
+            self.conn.execute(
+                "UPDATE players SET password = ?, password_changed = 0 WHERE id = ?",
+                (role_passwords[row["permission"]], player_id),
+            )
+            self.conn.commit()
+        print(f"[models] password reset: {row['en_name']}")
+        return row["en_name"]
 
     def state(self, token: str | None) -> dict[str, Any]:
         """Return the stage, the gift wall in display order, and the caller's own claim.

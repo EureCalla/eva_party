@@ -358,7 +358,7 @@ body.scene-cover #scene { object-fit: cover; }
 }
 .people-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.7fr) auto auto auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.7fr) auto auto auto auto;
   gap: 6px;
   align-items: center;
 }
@@ -398,6 +398,12 @@ body.scene-cover #scene { object-fit: cover; }
 .people-row .chk { display: flex; flex-direction: row; align-items: center; gap: 3px; font-size: 0.8rem; white-space: nowrap; }
 .people-row .pixel-btn { font-size: 0.8rem; padding: 0.3em 0.6em; box-shadow: 2px 2px 0 var(--deep); }
 .people-row .del { background: var(--outline); }
+/* 公布標籤起：別人的暗號反灰顯示 ****，旁邊可以重設 */
+.people-row input.masked { color: #999; background: #e6e6e6; border-color: #aaa; cursor: not-allowed; }
+.people-row .reset { background: var(--blue); }
+.bulk-row.off { opacity: 0.55; }
+.bulk-row.off input, .bulk-row.off .pixel-btn { cursor: not-allowed; }
+.bulk-off { flex-basis: 100%; }
 .add-row { padding-top: 8px; border-top: 3px dashed var(--dress); grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto; }
 .admin-note { margin: 0; font-size: 0.75rem; color: var(--outline); opacity: 0.8; }
 #admin-msg.ok { color: var(--blue); }

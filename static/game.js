@@ -324,7 +324,38 @@
       return;
     }
     saveToken(r.data.token);
+    if (r.data.must_change) return openPwEditor();
     const s = await api("/api/state");
+    enterWall(s.data);
+  });
+
+  // ---------- 公布標籤起：一般人登入後先改成自己的暗號（只改一次） ----------
+  const pwEl = document.getElementById("pw-editor");
+  const pwForm = document.getElementById("pw-form");
+  const pwErr = document.getElementById("pw-error");
+  const PW_ERRORS = { empty: "暗號不能是空白", mismatch: "兩次輸入的暗號不一樣" };
+  function openPwEditor() {
+    pwForm.reset();
+    pwErr.hidden = true;
+    pwEl.hidden = false;
+    document.getElementById("pw-new").focus();
+  }
+  pwForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const r = await api("/api/password", {
+      password: document.getElementById("pw-new").value,
+      confirm: document.getElementById("pw-confirm").value,
+    });
+    if (r.status === 401) return backToLogin("請重新登入");
+    if (!r.ok) {
+      pwErr.textContent = PW_ERRORS[r.data.result] || "送出失敗";
+      pwErr.hidden = false;
+      return;
+    }
+    pwEl.hidden = true;
+    pwForm.reset();
+    const s = await api("/api/state");
+    if (s.status === 401) return backToLogin("請重新登入");
     enterWall(s.data);
   });
 
@@ -488,6 +519,8 @@
 
   async function refreshState() {
     const r = await api("/api/state");
+    if (r.status === 401) return backToLogin("活動階段已切換，請重新登入");
+    if (r.status === 403 && r.data.result === "must_change") return openPwEditor();
     if (r.ok) applyState(r.data);
   }
 
@@ -531,7 +564,7 @@
     tile.nopeTimer = setTimeout(() => (tile.label.textContent = tile.animal + "的禮物"), 1200);
   }
 
-  function backToLogin() {
+  function backToLogin(msg) {
     saveToken(null);
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
@@ -540,7 +573,12 @@
     closePicker();
     closeDesc();
     document.getElementById("admin").hidden = true;
+    pwEl.hidden = true;
     show("login");
+    if (msg) {
+      loginErr.textContent = msg;
+      loginErr.hidden = false;
+    }
   }
 
   async function onGiftClick(giftId) {
@@ -663,6 +701,7 @@
 
   function renderPeople(list) {
     peopleEl.textContent = "";
+    const anyMasked = list.some((p) => p.masked);
     list.forEach((p) => {
       const row = document.createElement("div");
       row.className = "people-row";
@@ -673,9 +712,36 @@
       animal.value = p.animal;
       animal.setAttribute("aria-label", "動物");
       const pw = document.createElement("input");
-      pw.value = p.password;
       pw.setAttribute("aria-label", "暗號");
-      pw.title = "暗號（改權限時沒手動改，會自動換成該身分的預設暗號）";
+      if (p.masked) {
+        // 公布標籤起：別人的暗號 server 不會送來，只顯示 ****
+        pw.value = "****";
+        pw.disabled = true;
+        pw.className = "masked";
+        pw.title = "公布標籤之後看不到別人的暗號";
+      } else {
+        pw.value = p.password;
+        pw.title = "暗號（改權限時沒手動改，會自動換成該身分的預設暗號）";
+      }
+      const reset = document.createElement(anyMasked ? "button" : "span");
+      if (anyMasked && !p.masked) {
+        // 自己那列：放一個看不見的佔位按鈕，欄寬跟其他列對齊
+        reset.type = "button";
+        reset.className = "pixel-btn small reset";
+        reset.textContent = "重設";
+        reset.style.visibility = "hidden";
+        reset.tabIndex = -1;
+      } else if (p.masked) {
+        reset.type = "button";
+        reset.className = "pixel-btn small reset";
+        reset.textContent = "重設";
+        reset.title = "改回預設暗號，他下次登入要再設一次自己的暗號";
+        reset.addEventListener("click", () => {
+          if (confirm("確定把 " + p.en_name + " 的暗號重設成預設暗號？他下次登入要再設一次自己的暗號。")) {
+            peopleAction({ action: "reset_password", id: p.id }, "已重設 " + p.en_name + " 的暗號");
+          }
+        });
+      }
       const chk = document.createElement("label");
       chk.className = "chk";
       const admin = document.createElement("input");
@@ -693,7 +759,7 @@
             id: p.id,
             en_name: name.value,
             animal: animal.value,
-            password: pw.value,
+            password: p.masked ? undefined : pw.value,
             admin: admin.checked,
           },
           "已更新 " + name.value
@@ -709,7 +775,7 @@
           peopleAction({ action: "delete", id: p.id }, "已刪除 " + p.en_name);
         }
       });
-      row.append(name, animal, pw, chk, save, del);
+      row.append(name, animal, pw, reset, chk, save, del);
       peopleEl.appendChild(row);
     });
   }
@@ -722,6 +788,12 @@
     people = data.players;
     renderPeople(people);
     userPwInput.value = data.user_password;
+    // 公布標籤起：一次全改會蓋掉大家自己的暗號，停用
+    const off = !!data.passwords_private;
+    userPwForm.classList.toggle("off", off);
+    userPwInput.disabled = off;
+    userPwForm.querySelector("button").disabled = off;
+    document.getElementById("user-pw-off").hidden = !off;
   }
 
   async function loadPeople() {
@@ -777,10 +849,12 @@
     if (r.status === 403) return adminNotice("只有管理者可以切換階段");
     if (r.data.result === "incomplete") return showStageBlock(sel.value, r.data.missing, r.data.names);
     if (!r.ok) return adminNotice("切換失敗");
+    // 切換階段會登出所有人（包含自己），回登入頁重新登入
+    const s = stages.find((x) => x.key === sel.value);
+    if (sel.value !== stage) return backToLogin("已切換到「" + (s ? s.name : sel.value) + "」，所有人都要重新登入");
     await refreshState();
     renderStageOptions();
-    const s = stages.find((x) => x.key === stage);
-    adminNotice("已切換到「" + (s ? s.name : stage) + "」", true);
+    adminNotice("已經是「" + (s ? s.name : sel.value) + "」", true);
   });
   userPwForm.addEventListener("submit", async (e) => {
     e.preventDefault();
