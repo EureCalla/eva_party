@@ -26,12 +26,14 @@ from migrations import (
     m007_add_minigame,
     m008_add_game_kind,
     m009_add_exchange_transfers,
+    m010_add_gift_hearts,
 )
 
 PERMISSIONS = ("user", "admin")
 EXCHANGE_ROUND_SEC = 120
 MINIGAME_SEC = 60
 EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
+GIFT_HEART_LIMIT = 5
 DESCRIPTION_MAX = 50  # 禮物描述字數上限
 DESCRIBE_STAGES = ("reveal", "exchange")  # 可以寫／改禮物描述的階段
 DESCRIPTION_PUBLIC_STAGES = ("exchange", "feast")  # 描述對所有人公開的階段（聚光燈講話框）
@@ -103,6 +105,7 @@ class GameDB:
             m007_add_minigame.apply(self.conn)
             m008_add_game_kind.apply(self.conn)
             m009_add_exchange_transfers.apply(self.conn)
+            m010_add_gift_hearts.apply(self.conn)
         # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
         self.round_sec: float = EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
@@ -271,6 +274,11 @@ class GameDB:
             ).fetchone()
             if row is None:
                 raise ValueError("找不到這個使用者")
+            self.conn.execute(
+                "DELETE FROM gift_hearts WHERE voter_id = ? OR gift_id = ? "
+                "OR gift_id IN (SELECT id FROM players WHERE claimed_by = ?)",
+                (player_id, player_id, player_id),
+            )
             self.conn.execute(
                 "UPDATE players SET claimed_by = NULL, claimed_at = NULL, label = NULL, labeled_at = NULL, "
                 "description = NULL, described_at = NULL WHERE claimed_by = ?",
@@ -459,13 +467,23 @@ class GameDB:
         with self.lock:
             stage = self.get_stage()
             exchange_started = stage == EXCHANGE_STAGE and self._current_round() is not None
+            rows = self.conn.execute(
+                "SELECT id, animal, claimed_by, label, description FROM players WHERE is_deleted = 0 ORDER BY gift_order"
+            ).fetchall()
+            player = self.player_by_token(token) if token else None
+            my_id = player["id"] if player is not None else None
+            hearts = {}
+            if stage == EXCHANGE_STAGE:
+                hearts = {
+                    row["gift_id"]: (row["total"], bool(row["mine"]))
+                    for row in self.conn.execute(
+                        "SELECT gift_id, COUNT(*) AS total, MAX(voter_id = ?) AS mine "
+                        "FROM gift_hearts GROUP BY gift_id",
+                        (my_id,),
+                    )
+                }
         reveal_labels = stage != "seating"
         public_desc = stage in DESCRIPTION_PUBLIC_STAGES
-        rows = self.conn.execute(
-            "SELECT id, animal, claimed_by, label, description FROM players WHERE is_deleted = 0 ORDER BY gift_order"
-        ).fetchall()
-        player = self.player_by_token(token) if token else None
-        my_id = player["id"] if player is not None else None
         # 公布標籤階段：描述內容只回給寫的人，其他人只知道寫了沒（寫好的禮物跳得比較快）
         # 交換禮物起：描述公開，聚光燈下的禮物用講話框顯示
         gifts = []
@@ -479,6 +497,8 @@ class GameDB:
             }
             if public_desc:
                 gift["description"] = r["description"]
+            if stage == EXCHANGE_STAGE:
+                gift["heart_count"], gift["hearted"] = hearts.get(r["id"], (0, False))
             gifts.append(gift)
         me: dict[str, Any] | None = None
         if player is not None:
@@ -492,6 +512,34 @@ class GameDB:
                 "is_admin": player["permission"] == "admin",
             }
         return {"stage": stage, "exchange_started": exchange_started, "gifts": gifts, "me": me}
+
+    def set_gift_heart(self, token: str, gift_id: int, liked: bool) -> str:
+        """Set a player's heart while the gift wall is waiting for the exchange to start."""
+        with self.lock, self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            player = self.player_by_token(token) if token else None
+            if player is None:
+                return "unknown"
+            if self.get_stage() != EXCHANGE_STAGE or self._current_round() is not None:
+                return "locked"
+            gift = self.conn.execute(
+                "SELECT claimed_by FROM players WHERE id = ? AND is_deleted = 0", (gift_id,)
+            ).fetchone()
+            if gift is None or gift["claimed_by"] is None:
+                return "unavailable"
+            voter = player["id"]
+            if gift["claimed_by"] == voter:
+                return "own_gift"
+            if not liked:
+                self.conn.execute("DELETE FROM gift_hearts WHERE voter_id = ? AND gift_id = ?", (voter, gift_id))
+                return "ok"
+            votes = self.conn.execute("SELECT gift_id FROM gift_hearts WHERE voter_id = ?", (voter,)).fetchall()
+            if any(row["gift_id"] == gift_id for row in votes):
+                return "ok"
+            if len(votes) >= GIFT_HEART_LIMIT:
+                return "limit"
+            self.conn.execute("INSERT INTO gift_hearts (voter_id, gift_id) VALUES (?, ?)", (voter, gift_id))
+            return "ok"
 
     def set_description(self, token: str, text: str) -> str:
         """Set the description on the caller's gift; returns ok / unknown / empty / too_long / not_claimed / locked.

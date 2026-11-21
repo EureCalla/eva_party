@@ -382,6 +382,8 @@
     giftsEl.textContent = "";
     tiles.clear();
     gifts.forEach((g) => {
+      const card = document.createElement("div");
+      card.className = "gift-card";
       const el = document.createElement("button");
       el.type = "button";
       el.className = "gift";
@@ -398,13 +400,23 @@
       description.hidden = true;
       el.append(cv, tag, label, description);
       el.addEventListener("click", () => onGiftClick(g.gift_id));
-      giftsEl.appendChild(el);
+      const heart = document.createElement("button");
+      heart.type = "button";
+      heart.className = "gift-heart";
+      heart.hidden = true;
+      heart.addEventListener("click", () => setGiftHeart(g.gift_id));
+      card.append(el, heart);
+      giftsEl.appendChild(card);
       const tile = {
         el,
         ctx: cv.getContext("2d"),
         tag,
         label,
         description,
+        heart,
+        hearted: false,
+        canHeart: false,
+        heartPending: false,
         animal: g.animal,
         claimed: false,
         giftLabel: null,
@@ -460,6 +472,9 @@
   const exchangeBtn = document.getElementById("exchange-btn");
   const exchangeStartBtn = document.getElementById("exchange-start-btn");
   const exchangeStartError = document.getElementById("exchange-start-error");
+  const giftHeartHint = document.getElementById("gift-heart-hint");
+  const giftHeartNotice = document.getElementById("gift-heart-notice");
+  let giftHeartNoticeTimer;
   let exchangeStarted = false;
   const stayOnWall = new URLSearchParams(location.search).get("wall") === "1";
   let goingToExchange = false;
@@ -494,6 +509,34 @@
     }
   });
 
+  function showHeartNotice(text) {
+    clearTimeout(giftHeartNoticeTimer);
+    giftHeartNotice.textContent = text;
+    giftHeartNotice.hidden = !text;
+    if (text) giftHeartNoticeTimer = setTimeout(() => { giftHeartNotice.hidden = true; }, 3500);
+  }
+
+  async function setGiftHeart(giftId) {
+    const tile = tiles.get(giftId);
+    if (!tile || !tile.canHeart || tile.heartPending) return;
+    tile.heartPending = true;
+    tile.heart.disabled = true;
+    showHeartNotice("");
+    try {
+      const result = await api("/api/gift-heart", { gift_id: giftId, liked: !tile.hearted });
+      if (result.ok || result.data.result === "locked") {
+        await refreshState();
+      } else {
+        showHeartNotice(result.data.result === "limit" ? "每人最多只能按五個愛心" : "無法更新愛心，請再試一次");
+      }
+    } catch (e) {
+      showHeartNotice("連線失敗，請再試一次");
+    } finally {
+      tile.heartPending = false;
+      tile.heart.disabled = !tile.canHeart;
+    }
+  }
+
   function applyState(data) {
     if (data.labels) labels = data.labels;
     if (data.stages) stages = data.stages;
@@ -508,6 +551,9 @@
     if (exchangeStartBtn.hidden) exchangeStartError.hidden = true;
     if (exchangeStarted && data.me && !stayOnWall) return openExchange();
     const showDescriptions = stage === "exchange";
+    const votingOpen = showDescriptions && !exchangeStarted && !!data.me;
+    giftHeartHint.hidden = !votingOpen;
+    if (!votingOpen) showHeartNotice("");
     wallEl.classList.toggle("public-descriptions", showDescriptions);
     const sig = data.gifts.map((g) => g.gift_id + ":" + g.animal).join(",");
     if (sig !== wallSig) {
@@ -531,7 +577,18 @@
       tile.claimed = g.claimed;
       tile.described = !!g.described;
       tile.el.classList.toggle("claimed", g.claimed);
-      tile.el.classList.toggle("mine", !!me && me.gift_id === g.gift_id);
+      const mine = !!me && me.gift_id === g.gift_id;
+      tile.el.classList.toggle("mine", mine);
+      tile.hearted = g.hearted === true;
+      tile.canHeart = votingOpen && g.claimed && !mine;
+      tile.heart.hidden = !showDescriptions;
+      tile.heart.disabled = !tile.canHeart || tile.heartPending;
+      if (showDescriptions) {
+        const count = g.heart_count ?? 0;
+        tile.heart.textContent = (tile.hearted ? "♥ " : "♡ ") + count;
+        tile.heart.setAttribute("aria-label", g.animal + "的禮物，" + count + " 個愛心");
+        tile.heart.setAttribute("aria-pressed", String(tile.hearted));
+      }
       if (!g.claimed) drawGift(tile.ctx, "rest", g.label);
     });
     updateHint();

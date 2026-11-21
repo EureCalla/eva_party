@@ -149,6 +149,14 @@ class GameHandler(SimpleHTTPRequestHandler):
             result = self.db.set_label(self.headers.get("X-Token", ""), str(data.get("label", "")), cms.GIFT_LABELS)
             status = {"ok": 200, "unknown": 401, "invalid": 400, "not_claimed": 409, "locked": 409}[result]
             self.send_json({"result": result}, status)
+        elif self.path == "/api/gift-heart":
+            gift_id, liked = data.get("gift_id"), data.get("liked")
+            if type(gift_id) is not int or type(liked) is not bool:
+                self.send_json({"result": "invalid"}, 400)
+                return
+            result = self.db.set_gift_heart(self.headers.get("X-Token", ""), gift_id, liked)
+            status = {"ok": 200, "unknown": 401, "locked": 409, "unavailable": 404, "own_gift": 403, "limit": 409}
+            self.send_json({"result": result}, status[result])
         elif self.path == "/api/exchange/start":
             result = self.db.start_exchange(self.headers.get("X-Token", ""))
             status = {"ok": 200, "forbidden": 403, "locked": 409, "started": 409, "empty": 409}[result]
