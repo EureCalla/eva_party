@@ -378,7 +378,18 @@
     piece(ctx, "sign_back", 0, { ax: 25, ay: 11 });
   }
 
+  let tappedGift = null;
+  function clearTappedGift() {
+    tappedGift?.classList.remove("show-description");
+    tappedGift = null;
+  }
+
+  wallEl.addEventListener("click", (e) => {
+    if (tappedGift && !tappedGift.contains(e.target)) clearTappedGift();
+  });
+
   function buildWall(gifts) {
+    clearTappedGift();
     giftsEl.textContent = "";
     tiles.clear();
     gifts.forEach((g) => {
@@ -394,9 +405,13 @@
       tag.className = "tag";
       const label = document.createElement("span");
       label.className = "label";
+      label.id = "gift-label-" + g.gift_id;
       label.textContent = g.animal + "的禮物";
+      el.setAttribute("aria-labelledby", label.id);
       const description = document.createElement("span");
       description.className = "gift-description";
+      description.id = "gift-description-" + g.gift_id;
+      description.setAttribute("role", "tooltip");
       description.hidden = true;
       el.append(cv, tag, label, description);
       el.addEventListener("click", () => onGiftClick(g.gift_id));
@@ -472,6 +487,7 @@
   const exchangeBtn = document.getElementById("exchange-btn");
   const exchangeStartBtn = document.getElementById("exchange-start-btn");
   const exchangeStartError = document.getElementById("exchange-start-error");
+  const giftDescriptionHint = document.getElementById("gift-description-hint");
   const giftHeartHint = document.getElementById("gift-heart-hint");
   const giftHeartNotice = document.getElementById("gift-heart-notice");
   let giftHeartNoticeTimer;
@@ -551,6 +567,8 @@
     if (exchangeStartBtn.hidden) exchangeStartError.hidden = true;
     if (exchangeStarted && data.me && !stayOnWall) return openExchange();
     const showDescriptions = stage === "exchange";
+    giftDescriptionHint.hidden = !showDescriptions;
+    if (!showDescriptions) clearTappedGift();
     const votingOpen = showDescriptions && !exchangeStarted && !!data.me;
     giftHeartHint.hidden = !votingOpen;
     if (!votingOpen) showHeartNotice("");
@@ -574,6 +592,9 @@
       const description = showDescriptions ? g.description || "" : "";
       if (tile.description.textContent !== description) tile.description.textContent = description;
       tile.description.hidden = !description;
+      tile.el.classList.toggle("has-description", !!description);
+      if (description) tile.el.setAttribute("aria-describedby", tile.description.id);
+      else tile.el.removeAttribute("aria-describedby");
       tile.claimed = g.claimed;
       tile.described = !!g.described;
       tile.el.classList.toggle("claimed", g.claimed);
@@ -648,6 +669,7 @@
     descPromptedStage = null;
     closePicker();
     closeDesc();
+    clearTappedGift();
     document.getElementById("admin").hidden = true;
     show("login");
   }
@@ -655,9 +677,19 @@
   async function onGiftClick(giftId) {
     const tile = tiles.get(giftId);
     if (!tile) return;
-    // 公布標籤、交換禮物：點自己的禮物寫／改描述；其他禮物只能看
+    // 自己的禮物可編輯；觸控裝置可點別人的禮物查看介紹。
     if (stage !== "seating") {
-      if (canDescribe() && me.gift_id === giftId) openDesc();
+      if (canDescribe() && me.gift_id === giftId) {
+        clearTappedGift();
+        openDesc();
+      } else if (stage === "exchange" && !tile.description.hidden && window.matchMedia("(hover: none)").matches) {
+        const wasOpen = tappedGift === tile.el;
+        clearTappedGift();
+        if (!wasOpen) {
+          tappedGift = tile.el;
+          tappedGift.classList.add("show-description");
+        }
+      }
       return;
     }
     if (me && me.gift_id === giftId) return openPicker();

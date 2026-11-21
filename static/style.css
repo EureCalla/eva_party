@@ -145,6 +145,7 @@ body.scene-cover #scene { object-fit: cover; }
   min-width: 0;
 }
 .gift {
+  position: relative;
   display: flex;
   width: 100%;
   flex: 1;
@@ -166,16 +167,50 @@ body.scene-cover #scene { object-fit: cover; }
   word-break: keep-all;
 }
 .gift-description {
-  width: 100%;
-  color: var(--cream);
+  position: absolute;
+  z-index: 2;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100% + 4px);
+  padding: 0.4rem;
+  border: 2px solid var(--outline);
+  background: var(--cream);
+  color: var(--deep);
+  box-shadow: 3px 3px 0 var(--deep);
   font-size: 0.875rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  visibility: hidden;
+  pointer-events: none;
+}
+.gift-description::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--outline);
+  border-bottom: 2px solid var(--outline);
+  background: var(--cream);
+  transform: translateX(-50%) rotate(45deg);
+}
+.gift:focus-visible .gift-description,
+.gift.show-description .gift-description { visibility: visible; }
+@media (hover: hover) {
+  .gift:hover .gift-description { visibility: visible; }
 }
 #exchange-start-error,
+#gift-description-hint,
 #gift-heart-hint { color: var(--cream); }
+#gift-description-hint,
 #gift-heart-hint { margin: -6px 0 12px; }
+.gift-description-touch { display: none; }
+@media (hover: none) {
+  .gift-description-mouse { display: none; }
+  .gift-description-touch { display: inline; }
+}
 .gift-heart {
   min-width: 4rem;
   min-height: 2.75rem;
@@ -375,6 +410,7 @@ body.scene-cover #scene { object-fit: cover; }
   border: 2px solid var(--outline);
 }
 #wall.locked .gift { cursor: default; }
+#wall.public-descriptions .gift.has-description,
 #wall.describe .gift.mine { cursor: pointer; } /* 公布標籤起：點自己的禮物寫描述 */
 
 /* ---------- 管理頁 ---------- */
