@@ -438,6 +438,9 @@
   const timerEl = document.getElementById("ex-timer");
   const bannerEl = document.getElementById("ex-banner");
   const resetBtn = document.getElementById("ex-reset"); // 沙盒專用：重置測試資料
+  const feastControls = document.getElementById("ex-feast-controls");
+  const feastBtn = document.getElementById("ex-feast");
+  const feastError = document.getElementById("ex-feast-error");
   const joinBtn = document.getElementById("ex-join");
   const leaveBtn = document.getElementById("ex-leave");
   const JOIN_REASONS = {
@@ -618,6 +621,7 @@
     }
     if (target >= 0 && target !== cur) turnTo(target);
     document.getElementById("ex-finished").hidden = !game.finished;
+    feastControls.hidden = !(game.finished && game.me?.is_admin);
     if (shownResults !== null && game.results.length > shownResults) {
       const r = game.results[game.results.length - 1];
       if (r.passed) {
@@ -654,6 +658,25 @@
   }
   joinBtn.addEventListener("click", () => contestAction("/api/exchange/join"));
   leaveBtn.addEventListener("click", () => contestAction("/api/exchange/withdraw"));
+  feastBtn.addEventListener("click", async () => {
+    if (feastControls.hidden || feastBtn.disabled) return;
+    feastBtn.disabled = true;
+    feastError.hidden = true;
+    try {
+      const result = await api("/api/admin/stage", { stage: "feast" });
+      if (result.ok) return goToWall("/");
+      if (result.data.result === "incomplete") {
+        const missing = result.data.missing === "label" ? "選標籤" : "寫禮物描述";
+        feastError.textContent = "還有人沒完成" + missing + "：" + result.data.names.join("、");
+      } else {
+        feastError.textContent = result.status === 403 ? "只有管理者可以切換階段" : "切換失敗，請再試一次";
+      }
+    } catch (e) {
+      feastError.textContent = "連線失敗，請再試一次";
+    }
+    feastError.hidden = false;
+    feastBtn.disabled = false;
+  });
 
   // 沙盒專用：重置測試資料（交換進度清空，順序、標籤、描述不動）
   resetBtn.addEventListener("click", async () => {
