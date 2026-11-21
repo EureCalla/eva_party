@@ -483,6 +483,7 @@ class GameDB:
             player = self.player_by_token(token) if token else None
             my_id = player["id"] if player is not None else None
             feast_reply = None
+            feast_messages = None
             if stage == FEAST_STAGE and my_id is not None:
                 gift = self._feast_gift(my_id)
                 if gift is not None:
@@ -494,6 +495,8 @@ class GameDB:
                         "giver_animal": gift["giver_animal"],
                         "submitted": feast_reply_length(gift["reply_message"] or "") >= FEAST_REPLY_MIN,
                     }
+                if feast_reply is None or feast_reply["submitted"]:
+                    feast_messages = self._feast_messages()
             hearts = {}
             if stage == EXCHANGE_STAGE:
                 hearts = {
@@ -535,7 +538,7 @@ class GameDB:
             }
         return {
             "stage": stage, "exchange_started": exchange_started, "gifts": gifts, "me": me,
-            "feast_reply": feast_reply,
+            "feast_reply": feast_reply, "feast_messages": feast_messages,
         }
 
     def _feast_gift(self, sender_id: int) -> sqlite3.Row | None:
@@ -548,6 +551,20 @@ class GameDB:
             "AND reply.giver_id = giver.id WHERE g.winner_id = ? AND g.is_deleted = 0",
             (sender_id,),
         ).fetchone()
+
+    def _feast_messages(self) -> list[dict[str, Any]]:
+        """List valid notes for the current exchange's final gift assignments."""
+        rows = self.conn.execute(
+            "SELECT sender.animal AS sender_animal, sender.en_name AS sender_name, "
+            "giver.animal AS giver_animal, giver.en_name AS giver_name, reply.message "
+            "FROM feast_replies reply "
+            "JOIN players gift ON gift.id = reply.gift_id AND gift.is_deleted = 0 "
+            "AND gift.winner_id = reply.sender_id AND gift.claimed_by = reply.giver_id "
+            "JOIN players sender ON sender.id = reply.sender_id AND sender.is_deleted = 0 "
+            "JOIN players giver ON giver.id = reply.giver_id AND giver.is_deleted = 0 "
+            "ORDER BY reply.created_at, reply.gift_id"
+        )
+        return [dict(row) for row in rows if feast_reply_length(row["message"]) >= FEAST_REPLY_MIN]
 
     def submit_feast_reply(self, token: str, gift_id: int, message: str) -> str:
         """Save the recipient's required note once for this gift and giver."""

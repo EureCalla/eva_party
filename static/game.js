@@ -561,6 +561,7 @@
     // 登入的人被管理者刪掉了：回登入頁
     if (token() && !data.me && !wallEl.hidden) return backToLogin();
     if (data.me) me = data.me;
+    window.FeastFinale.render(stage === "feast" && data.me ? data.feast_messages : null);
     exchangeStarted = stage === "exchange" && data.exchange_started === true;
     exchangeBtn.hidden = !(exchangeStarted && data.me);
     exchangeStartBtn.hidden = !(stage === "exchange" && !exchangeStarted && data.me && data.me.is_admin);
@@ -668,6 +669,7 @@
     pollTimer = null;
     me = null;
     renderFeastReply(null);
+    window.FeastFinale.render(null);
     descPromptedStage = null;
     closePicker();
     closeDesc();
@@ -747,6 +749,7 @@
       if (result.ok) {
         if (feastReply?.gift_id === reply.gift_id && feastReply?.giver_name === reply.giver_name) {
           renderFeastReply({ ...reply, submitted: true });
+          await refreshState();
         }
       } else if (result.status === 401) {
         backToLogin();

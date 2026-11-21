@@ -593,3 +593,78 @@ body.scene-cover #scene { object-fit: cover; }
   background: var(--dress);
   border: 2px solid var(--outline);
 }
+
+/* 相框的位置對應預告片大結局的定格畫面。 */
+#wall.feast-finale-open {
+  padding: 0;
+  background: #151016;
+}
+#wall.feast-finale-open > .wall-head,
+#wall.feast-finale-open > #gifts { display: none; }
+#feast-finale {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+.feast-frame {
+  position: relative;
+  width: min(100%, calc(100dvh * 16 / 9));
+  aspect-ratio: 16 / 9;
+}
+.feast-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#feast-photo {
+  position: absolute;
+  top: 30.381%;
+  left: 49.932%;
+  width: 45.247%;
+  height: 45.247%;
+  transform: translate(-50%, -50%) rotate(-1.82deg);
+  overflow: hidden;
+}
+#feast-photo::before {
+  position: absolute;
+  inset: 0;
+  background: rgba(21, 16, 22, 0.28);
+  content: "";
+}
+#feast-photo-comments { position: absolute; inset: 0; }
+#feast-photo-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: #fff6ea;
+  text-shadow: 1px 2px 3px #21151c;
+  font-size: clamp(0.72rem, 1.5vw, 1.1rem);
+}
+.feast-comment {
+  position: absolute;
+  left: 0;
+  margin: 0;
+  padding: 0.2em 0.55em;
+  color: #fff6ea;
+  background: rgba(33, 21, 28, 0.82);
+  font-size: clamp(0.72rem, 1.5vw, 1.1rem);
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.feast-comment strong { color: #ffc5db; }
+#feast-photo.still #feast-photo-comments {
+  display: grid;
+  align-content: start;
+  gap: 0.22rem;
+  padding: 0.25rem;
+  overflow: auto;
+}
+#feast-photo.still .feast-comment {
+  position: static;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
