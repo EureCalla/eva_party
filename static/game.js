@@ -613,6 +613,7 @@
       if (!g.claimed) drawGift(tile.ctx, "rest", g.label);
     });
     updateHint();
+    renderFeastReply(data.feast_reply, data.feast_reply_max);
     if (!wallEl.hidden) promptDescription();
   }
 
@@ -666,6 +667,7 @@
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     me = null;
+    renderFeastReply(null);
     descPromptedStage = null;
     closePicker();
     closeDesc();
@@ -673,6 +675,90 @@
     document.getElementById("admin").hidden = true;
     show("login");
   }
+
+  const feastDialog = document.getElementById("feast-reply-dialog");
+  const feastForm = document.getElementById("feast-reply-form");
+  const feastGift = document.getElementById("feast-reply-gift");
+  const feastInput = document.getElementById("feast-reply-input");
+  const feastCount = document.getElementById("feast-reply-count");
+  const feastError = document.getElementById("feast-reply-error");
+  const feastSubmit = document.getElementById("feast-reply-submit");
+  const feastStatus = document.getElementById("feast-reply-status");
+  let feastReply = null;
+  let feastLimit = 50;
+  let feastSending = false;
+
+  function feastText() {
+    return feastInput.value.replace(/\r?\n/g, " ").trim();
+  }
+
+  function updateFeastCount() {
+    const length = Array.from(feastText()).length;
+    feastCount.textContent = length + " / " + feastLimit;
+    feastSubmit.disabled = feastSending || length === 0 || length > feastLimit;
+  }
+
+  function renderFeastReply(reply, max) {
+    const active = stage === "feast" && !!me;
+    const changed = feastReply?.gift_id !== reply?.gift_id || feastReply?.giver_name !== reply?.giver_name;
+    feastReply = active ? reply : null;
+    if (max) feastLimit = max;
+    feastStatus.hidden = !active || (!!reply && !reply.submitted);
+    if (active) {
+      feastStatus.textContent = reply ? "留言已送出。" : "目前沒有可留言的禮物。";
+    }
+    if (!active || !reply || reply.submitted) {
+      if (feastDialog.open) feastDialog.close();
+      return;
+    }
+    if (changed || !feastDialog.open) {
+      feastInput.value = "";
+      feastError.hidden = true;
+    }
+    const giftName = reply.animal + "的禮物" + (reply.label ? "（" + reply.label + "）" : "");
+    feastGift.textContent = "你拿到的是 " + giftName + "，由 " + reply.giver_name + " 送出。";
+    updateFeastCount();
+    if (!feastDialog.open) feastDialog.showModal();
+  }
+
+  feastDialog.addEventListener("cancel", (e) => e.preventDefault());
+  feastInput.addEventListener("input", () => {
+    feastError.hidden = true;
+    updateFeastCount();
+  });
+  feastForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (feastSubmit.disabled || !feastReply) return;
+    const reply = feastReply;
+    feastSending = true;
+    feastInput.readOnly = true;
+    feastError.hidden = true;
+    updateFeastCount();
+    try {
+      const result = await api("/api/feast-reply", { gift_id: reply.gift_id, message: feastText() });
+      if (result.ok) {
+        if (feastReply?.gift_id === reply.gift_id && feastReply?.giver_name === reply.giver_name) {
+          renderFeastReply({ ...reply, submitted: true });
+        }
+      } else if (result.status === 401) {
+        backToLogin();
+      } else if (result.data.result === "locked" || result.data.result === "wrong_gift") {
+        await refreshState();
+        feastError.textContent = "禮物資料已更新，請確認後再送出。";
+        feastError.hidden = false;
+      } else {
+        feastError.textContent = "請寫一句 " + feastLimit + " 字以內的留言。";
+        feastError.hidden = false;
+      }
+    } catch (e) {
+      feastError.textContent = "連線失敗，請再試一次";
+      feastError.hidden = false;
+    } finally {
+      feastSending = false;
+      feastInput.readOnly = false;
+      updateFeastCount();
+    }
+  });
 
   async function onGiftClick(giftId) {
     const tile = tiles.get(giftId);

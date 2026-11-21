@@ -27,11 +27,14 @@ from migrations import (
     m008_add_game_kind,
     m009_add_exchange_transfers,
     m010_add_gift_hearts,
+    m011_add_feast_replies,
 )
 
 PERMISSIONS = ("user", "admin")
 EXCHANGE_ROUND_SEC = 120
 MINIGAME_SEC = 60
+FEAST_STAGE = "feast"
+FEAST_REPLY_MAX = 50
 EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
 GIFT_HEART_LIMIT = 5
 DESCRIPTION_MAX = 50  # 禮物描述字數上限
@@ -106,6 +109,7 @@ class GameDB:
             m008_add_game_kind.apply(self.conn)
             m009_add_exchange_transfers.apply(self.conn)
             m010_add_gift_hearts.apply(self.conn)
+            m011_add_feast_replies.apply(self.conn)
         # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
         self.round_sec: float = EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
@@ -472,6 +476,17 @@ class GameDB:
             ).fetchall()
             player = self.player_by_token(token) if token else None
             my_id = player["id"] if player is not None else None
+            feast_reply = None
+            if stage == FEAST_STAGE and my_id is not None:
+                gift = self._feast_gift(my_id)
+                if gift is not None:
+                    feast_reply = {
+                        "gift_id": gift["gift_id"],
+                        "animal": gift["animal"],
+                        "label": gift["label"],
+                        "giver_name": gift["giver_name"],
+                        "submitted": bool(gift["submitted"]),
+                    }
             hearts = {}
             if stage == EXCHANGE_STAGE:
                 hearts = {
@@ -511,7 +526,45 @@ class GameDB:
                 "description": mine["description"] if mine else None,
                 "is_admin": player["permission"] == "admin",
             }
-        return {"stage": stage, "exchange_started": exchange_started, "gifts": gifts, "me": me}
+        return {
+            "stage": stage, "exchange_started": exchange_started, "gifts": gifts, "me": me,
+            "feast_reply": feast_reply,
+        }
+
+    def _feast_gift(self, sender_id: int) -> sqlite3.Row | None:
+        """Find the player's final gift and the person who brought it."""
+        return self.conn.execute(
+            "SELECT g.id AS gift_id, g.animal, g.label, giver.id AS giver_id, giver.en_name AS giver_name, "
+            "reply.gift_id IS NOT NULL AS submitted FROM players g "
+            "JOIN players giver ON giver.id = g.claimed_by AND giver.is_deleted = 0 "
+            "LEFT JOIN feast_replies reply ON reply.gift_id = g.id AND reply.sender_id = g.winner_id "
+            "AND reply.giver_id = giver.id WHERE g.winner_id = ? AND g.is_deleted = 0",
+            (sender_id,),
+        ).fetchone()
+
+    def submit_feast_reply(self, token: str, gift_id: int, message: str) -> str:
+        """Save the recipient's required note once for this gift and giver."""
+        text = " ".join(message.splitlines()).strip()
+        if not text:
+            return "empty"
+        if len(text) > FEAST_REPLY_MAX:
+            return "too_long"
+        with self.lock, self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            player = self.player_by_token(token) if token else None
+            if player is None:
+                return "unknown"
+            if self.get_stage() != FEAST_STAGE:
+                return "locked"
+            gift = self._feast_gift(player["id"])
+            if gift is None or gift["gift_id"] != gift_id:
+                return "wrong_gift"
+            self.conn.execute(
+                "INSERT INTO feast_replies (gift_id, sender_id, giver_id, message, created_at) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(gift_id, sender_id, giver_id) DO NOTHING",
+                (gift_id, player["id"], gift["giver_id"], text, utc_now()),
+            )
+        return "ok"
 
     def set_gift_heart(self, token: str, gift_id: int, liked: bool) -> str:
         """Set a player's heart while the gift wall is waiting for the exchange to start."""

@@ -531,7 +531,17 @@ body.scene-cover #scene { object-fit: cover; }
 }
 
 /* ---------- 禮物描述 ---------- */
-#desc-input {
+#feast-reply-dialog {
+  max-width: calc(100% - 32px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+#feast-reply-dialog::backdrop { background: rgba(58, 36, 24, 0.72); }
+#feast-reply-status { color: var(--cream); }
+#desc-input,
+#feast-reply-input {
   font: inherit;
   font-size: 1rem;
   padding: 8px 10px;

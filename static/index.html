@@ -40,6 +40,7 @@
       <canvas id="wall-sign" width="400" height="176"></canvas>
       <ol id="stage-bar" aria-label="活動進度"></ol>
       <p id="wall-hint">猜猜哪個是你的禮物？</p>
+      <p id="feast-reply-status" role="status" hidden></p>
       <p id="gift-description-hint" hidden>
         <span class="gift-description-mouse">滑鼠移到禮物上可看介紹。</span>
         <span class="gift-description-touch">點一下禮物可看介紹。</span>
@@ -150,6 +151,18 @@
       <button id="desc-cancel" type="button" class="link-btn">等一下再寫</button>
     </form>
   </div>
+
+  <dialog id="feast-reply-dialog" aria-labelledby="feast-reply-title">
+    <form id="feast-reply-form" class="card">
+      <h2 id="feast-reply-title" class="card-title picker-title">給送禮人的一句話</h2>
+      <p id="feast-reply-gift" class="card-sub"></p>
+      <label for="feast-reply-input">請對送禮的人說一句感謝或吐槽的話。</label>
+      <textarea id="feast-reply-input" rows="3" required aria-describedby="feast-reply-count"></textarea>
+      <p id="feast-reply-count" class="desc-count"></p>
+      <p id="feast-reply-error" class="error" role="alert" hidden></p>
+      <button id="feast-reply-submit" type="submit" class="pixel-btn" disabled>確定送出</button>
+    </form>
+  </dialog>
 
   <!-- 管理者切換階段時，還有人沒完成：列出名字 -->
   <div id="stage-block" class="overlay" hidden>
