@@ -1,7 +1,6 @@
 (function () {
   "use strict";
 
-  // 沙盒・交換禮物遊戲。繪圖零件與色票暫時從 ../game.js 複製（game.js 不動），合併回正式版時再整併
   const EXCHANGE_POLL_MS = 2000; // 交換回合要看倒數與爭奪人數，輪詢比禮物牆快
 
   // ---------- 正方形禮物與小腳（同 game.js） ----------
@@ -203,7 +202,9 @@
     }
     sessionToken = r.data.token;
     const s = await api("/api/state");
-    enterExchange(s.data);
+    if (!s.ok || !s.data.me) return goToWall("/");
+    if (s.data.stage !== EXCHANGE_STAGE) return goToWall("/");
+    await enterExchange(s.data);
   });
 
   // ---------- 交換禮物遊戲：聚光燈輪轉 ----------
@@ -227,7 +228,9 @@
   const pctx = spot.getContext("2d");
   const countEl = document.getElementById("ex-count");
   const FONT = getComputedStyle(document.body).fontFamily;
-  let order = []; // 依抽獎順序排好的禮物
+  let order = [];
+  let wallGifts = new Map();
+  let sandbox = false;
   let cur = 0; // 聚光燈下是第幾個
   let turnFrom = 0; // 輪轉動畫起點（可小數）
   let turnStart = null;
@@ -367,14 +370,15 @@
       drawSpotGift(g, sl.x, sl.y, sl.s, sl.a, bob);
     });
     // 管理者按開始後才顯示講話框；小遊戲進行中收起
-    syncBubble(turnStart === null && !!game && game.started && !inGamePhase());
+    syncBubble(turnStart === null && !!game && !!game.round && !inGamePhase());
     requestAnimationFrame(spotFrame);
   }
 
   function updateCount() {
-    if (!game || !game.started) countEl.textContent = order.length ? "共 " + order.length + " 份禮物" : "還沒有禮物";
-    else if (game.finished) countEl.textContent = "全部 " + order.length + " 份禮物都交換完了";
-    else countEl.textContent = "第 " + game.round.round_no + " / " + order.length + " 份";
+    const total = wallGifts.size;
+    if (!game || !game.started) countEl.textContent = total ? "共 " + total + " 份禮物" : "還沒有禮物";
+    else if (game.finished) countEl.textContent = "全部 " + total + " 份禮物都交換完了";
+    else countEl.textContent = "第 " + game.round.round_no + " / " + total + " 份";
   }
 
   // 輪轉到第 to 個（由伺服器回合決定）；動畫中再換會從目前畫面位置接著轉
@@ -424,11 +428,7 @@
     document.getElementById("ex-me").textContent = me
       ? me.name + (me.animal ? "（" + me.animal + (me.label ? "・" + me.label : "") + "）" : "（還沒認領禮物）")
       : "";
-    // 依抽獎順序排列；不在順序裡的（之後新增的禮物）排最後
-    const rank = new Map(drawIds.map((id, i) => [id, i]));
-    const at = (g) => (rank.has(g.gift_id) ? rank.get(g.gift_id) : drawIds.length + g.gift_id);
-    order = data.gifts.slice().sort((a, b) => at(a) - at(b));
-    cur = Math.min(cur, Math.max(0, order.length - 1));
+    wallGifts = new Map(data.gifts.map((g) => [g.gift_id, g]));
     if (data.description_max) descMax = data.description_max;
     showMyDesc(me);
     applyGame();
@@ -603,12 +603,16 @@
     const reason = document.getElementById("ex-reason");
     reason.textContent = me.joined ? "你已加入爭奪，倒數結束前可以退出（會退還搶奪券）" : JOIN_REASONS[me.reason] || "";
     startBtn.hidden = !(me.is_admin && !game.started);
-    resetBtn.hidden = !me.is_admin;
+    resetBtn.hidden = !(sandbox && me.is_admin);
   }
 
   function applyGame() {
     if (!game) return;
-    // 聚光燈對準伺服器目前的回合；開始前停在第一份，結束後停在最後一份
+    // 正式版只顯示已揭曉的抽獎順序，沙盒可預覽後續禮物。
+    const ids = sandbox ? drawIds : game.results.map((r) => r.gift_id);
+    if (!sandbox && game.round) ids.push(game.round.gift_id);
+    order = ids.map((id) => wallGifts.get(id)).filter(Boolean);
+    cur = Math.min(cur, Math.max(0, order.length - 1));
     let target = 0;
     if (game.round) target = order.findIndex((g) => g.gift_id === game.round.gift_id);
     else if (game.finished && game.results.length) {
@@ -659,6 +663,7 @@
 
   // 沙盒專用：重置測試資料（交換進度清空，順序、標籤、描述不動）
   resetBtn.addEventListener("click", async () => {
+    if (!sandbox) return;
     const ok = window.confirm(
       "要把交換禮物的進度全部清空嗎？\n\n回合、爭奪名單、誰拿到哪份禮物都會清掉，搶奪券回到 5 張，進行中的小遊戲也會結束。\n抽獎順序、標籤、描述不會動。",
     );
@@ -733,19 +738,22 @@
     }
   }
   async function refresh(data) {
-    await loadDrawOrder();
+    if (sandbox) await loadDrawOrder();
     await loadGame();
     if (shownResults === null && game) {
       // 第一次載入：聚光燈直接放到目前回合，不從第一份轉過去
       shownResults = game.results.length;
       const id = game.round ? game.round.gift_id : null;
-      const rank = drawIds.indexOf(id);
+      const rank = sandbox ? drawIds.indexOf(id) : game.results.length;
       if (rank >= 0) cur = rank;
     }
     applyState(data);
   }
 
   async function enterExchange(data) {
+    sandbox = data.sandbox === true;
+    document.getElementById("sandbox-badge").hidden = !sandbox;
+    document.getElementById("ex-sandbox-note").hidden = !sandbox;
     loginEl.hidden = true;
     sceneOn = false;
     scene.hidden = true;
@@ -759,19 +767,24 @@
     setInterval(async () => {
       const r = await api("/api/state");
       if (!r.ok) return;
-      // 管理者把階段切走：回首頁（禮物牆）。首頁不記登入，要重新登入
-      if (r.data.stage !== EXCHANGE_STAGE) {
-        console.log("[exchange] stage changed to", r.data.stage, "back to home");
-        location.href = "/";
-        return;
-      }
+      if (!r.data.me || r.data.stage !== EXCHANGE_STAGE) return goToWall("/");
       await refresh(r.data);
     }, EXCHANGE_POLL_MS);
   }
 
-  // 從首頁帶過來（sandbox_bridge.js）：接手登入 token，讀完即刪，重新整理一樣要重新登入
   const EXCHANGE_STAGE = "exchange";
-  const HANDOFF_KEY = "sandbox_handoff_token";
+  const HANDOFF_KEY = "exchange_handoff_token";
+
+  function goToWall(path) {
+    try {
+      if (sessionToken) sessionStorage.setItem("wall_handoff_token", sessionToken);
+    } catch (e) {
+      /* 無法交接登入時，首頁會顯示一般進入流程 */
+    }
+    location.href = path;
+  }
+
+  document.getElementById("ex-wall").addEventListener("click", () => goToWall("/?wall=1"));
   async function takeHandoff() {
     let token = null;
     try {
@@ -786,6 +799,10 @@
     if (!s.ok || !s.data.me) {
       sessionToken = null;
       return false;
+    }
+    if (s.data.stage !== EXCHANGE_STAGE) {
+      goToWall("/");
+      return true;
     }
     await enterExchange(s.data);
     return true;

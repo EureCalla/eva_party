@@ -452,6 +452,23 @@
     if (pickerEl.hidden && adminEl.hidden) openDesc();
   }
 
+  const exchangeBtn = document.getElementById("exchange-btn");
+  const stayOnWall = new URLSearchParams(location.search).get("wall") === "1";
+  let goingToExchange = false;
+
+  function openExchange() {
+    if (goingToExchange) return;
+    goingToExchange = true;
+    try {
+      sessionStorage.setItem("exchange_handoff_token", token());
+    } catch (e) {
+      /* 無法交接登入時，聚光燈頁會顯示登入畫面 */
+    }
+    location.href = "/exchange/";
+  }
+
+  exchangeBtn.addEventListener("click", openExchange);
+
   function applyState(data) {
     if (data.labels) labels = data.labels;
     if (data.stages) stages = data.stages;
@@ -460,6 +477,9 @@
     // 登入的人被管理者刪掉了：回登入頁
     if (token() && !data.me && !wallEl.hidden) return backToLogin();
     if (data.me) me = data.me;
+    const canEnterExchange = stage === "exchange" && !!data.me;
+    exchangeBtn.hidden = !canEnterExchange;
+    if (canEnterExchange && !stayOnWall) return openExchange();
     const sig = data.gifts.map((g) => g.gift_id + ":" + g.animal).join(",");
     if (sig !== wallSig) {
       wallSig = sig;
@@ -893,4 +913,18 @@
   // ---------- 開場 ----------
   show("intro");
   requestAnimationFrame(sceneFrame);
+  let wallHandoff = null;
+  try {
+    wallHandoff = sessionStorage.getItem("wall_handoff_token");
+    sessionStorage.removeItem("wall_handoff_token");
+  } catch (e) {
+    /* 無法接手登入時，保留原本的進入流程 */
+  }
+  if (wallHandoff) {
+    saveToken(wallHandoff);
+    api("/api/state").then((r) => {
+      if (r.ok && r.data.me) enterWall(r.data);
+      else backToLogin();
+    }).catch(backToLogin);
+  }
 })();

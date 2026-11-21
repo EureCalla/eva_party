@@ -29,6 +29,8 @@ from migrations import (
 )
 
 PERMISSIONS = ("user", "admin")
+EXCHANGE_ROUND_SEC = 120
+MINIGAME_SEC = 60
 EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
 DESCRIPTION_MAX = 50  # 禮物描述字數上限
 DESCRIBE_STAGES = ("reveal", "exchange")  # 可以寫／改禮物描述的階段
@@ -102,19 +104,19 @@ class GameDB:
             m008_add_game_kind.apply(self.conn)
             m009_add_exchange_transfers.apply(self.conn)
         # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
-        self.round_sec: float = cms.EXCHANGE_ROUND_SEC
+        self.round_sec: float = EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
         self.start_tickets: int = cms.START_TICKETS
         # 小遊戲參數；沙盒可改 game_sec 縮短
         self.game_prep_sec: float = cms.GAME_PREP_SEC
-        self.game_sec: float = cms.GAME_SEC
+        self.game_sec: float = MINIGAME_SEC
         self.game_reveal_sec: float = cms.GAME_REVEAL_SEC
         self.game_hp: int = cms.GAME_HP
-        self.count_game_sec: float = cms.COUNT_GAME_SEC
+        self.count_game_sec: float = MINIGAME_SEC
         self.count_bots: int = cms.COUNT_BOTS
-        self.climb_game_sec: float = cms.CLIMB_GAME_SEC
-        self.spell_game_sec: float = cms.SPELL_GAME_SEC
-        self.mom_game_sec: float = cms.MOM_GAME_SEC
+        self.climb_game_sec: float = MINIGAME_SEC
+        self.spell_game_sec: float = MINIGAME_SEC
+        self.mom_game_sec: float = MINIGAME_SEC
         self.game_mode: str = "random"  # 小遊戲種類：random（隨機）／stones／count／climb／spell／mom；沙盒可指定
         self.spin_sec: float = cms.SPIN_SEC
         self.battle: StoneBattle | CountBattle | ClimbBattle | SpellBattle | MomBattle | None = None  # 進行中的小遊戲（只在記憶體）

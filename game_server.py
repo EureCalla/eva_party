@@ -18,6 +18,7 @@ class GameHandler(SimpleHTTPRequestHandler):
     # 保持連線（keep-alive）：小遊戲每秒很多請求，省掉每次重新連線；閒置 30 秒就關
     protocol_version = "HTTP/1.1"
     timeout = 30
+    sandbox = False
 
     def __init__(self, *args: Any, db: GameDB, **kwargs: Any) -> None:
         """Keep a reference to the shared GameDB."""
@@ -61,6 +62,7 @@ class GameHandler(SimpleHTTPRequestHandler):
             data["labels"] = cms.GIFT_LABELS
             data["stages"] = [{"key": k, "name": n} for k, n in cms.STAGES]
             data["description_max"] = DESCRIPTION_MAX
+            data["sandbox"] = self.sandbox
             self.send_json(data)
         elif self.path == "/api/exchange":
             self.send_json(self.db.exchange_state(self.headers.get("X-Token")))

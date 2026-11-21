@@ -15,23 +15,27 @@ import mpivr20_cms as cms
 from app import lan_ip
 from game_server import GameHandler, GameServer
 from introduce import Introduce
-from models import GameDB
+from models import EXCHANGE_ROUND_SEC, MINIGAME_SEC, GameDB
 from tools.build_sandbox_db import build, fill_sample_descriptions
 
-# 夾進首頁的沙盒橋接：階段是交換禮物遊戲時，從首頁帶到聚光燈頁
-BRIDGE_TAG = '<script src="/sandbox/sandbox_bridge.js"></script>'
+EXCHANGE_PAGE = "/exchange/"
 
 
 class SandboxHandler(GameHandler):
     """GameHandler plus sandbox-only APIs that the real server does not expose."""
 
+    sandbox = True
+
     def do_GET(self) -> None:
-        """Serve the draw order (sandbox DB only) and the bridged home page, otherwise behave like GameHandler."""
+        """Serve the sandbox draw order and redirect the old sandbox page URL."""
         path = urlsplit(self.path).path
         if path == "/api/draw_order":
             self.send_json({"order": self.db.draw_order(), "seed": self.db.get_setting("draw_seed", "")})
-        elif path in ("/", "/index.html"):
-            self.send_home()
+        elif path == "/sandbox/exchange.html":
+            self.send_response(302)
+            self.send_header("Location", EXCHANGE_PAGE)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
         else:
             super().do_GET()
 
@@ -52,21 +56,6 @@ class SandboxHandler(GameHandler):
         else:
             super().do_POST()
 
-    def send_home(self) -> None:
-        """Serve the real index.html with the sandbox bridge script added to <head>.
-
-        The bridge sends players to the spotlight page once the stage is the
-        exchange stage, so game.js itself stays untouched.
-        """
-        html = (Path(self.directory) / "index.html").read_text(encoding="utf-8")
-        html = html.replace("<head>", "<head>\n  " + BRIDGE_TAG, 1)
-        body = html.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
 
 class SandboxServer(GameServer):
     """GameServer that uses SandboxHandler."""
@@ -83,12 +72,12 @@ def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="交換禮物遊戲沙盒（port 8478，只連 sandbox/sandbox.db）")
     parser.add_argument(
-        "--round-sec", type=float, default=cms.EXCHANGE_ROUND_SEC,
-        help=f"聚光燈每份禮物倒數秒數，預設 {cms.EXCHANGE_ROUND_SEC}；測試時可縮短，例如 30",
+        "--round-sec", type=float, default=EXCHANGE_ROUND_SEC,
+        help=f"聚光燈每份禮物倒數秒數，預設 {EXCHANGE_ROUND_SEC}；測試時可縮短，例如 30",
     )
     parser.add_argument(
-        "--game-sec", type=float, default=cms.GAME_SEC,
-        help=f"雪地大亂鬥的遊戲秒數，預設 {cms.GAME_SEC}；測試時可縮短，例如 30（報數遊戲固定 {cms.COUNT_GAME_SEC} 秒、往上跳跳樂 {cms.CLIMB_GAME_SEC} 秒、鍵盤詠唱師 {cms.SPELL_GAME_SEC} 秒、誰是乖孩子 {cms.MOM_GAME_SEC} 秒）",
+        "--game-sec", type=float, default=MINIGAME_SEC,
+        help=f"雪地大亂鬥的遊戲秒數，預設 {MINIGAME_SEC}；測試時可縮短，例如 30（其他四款固定 {MINIGAME_SEC} 秒）",
     )
     parser.add_argument(
         "--game", choices=["random", *cms.MINIGAMES], default="random",
@@ -117,8 +106,8 @@ def main() -> None:
           f"小遊戲：{cms.MINIGAMES.get(args.game, '隨機')}")
     print(f"[sandbox] players in DB: {db.player_count()}, stage: {db.get_stage()}")
     server = SandboxServer(cms.HOST, cms.SANDBOX_PORT, cms.STATIC_DIR, db)
-    print(f"[sandbox] 本機：http://localhost:{cms.SANDBOX_PORT}{cms.SANDBOX_PAGE}")
-    print(f"[sandbox] 手機：http://{lan_ip()}:{cms.SANDBOX_PORT}{cms.SANDBOX_PAGE}")
+    print(f"[sandbox] 本機：http://localhost:{cms.SANDBOX_PORT}{EXCHANGE_PAGE}")
+    print(f"[sandbox] 手機：http://{lan_ip()}:{cms.SANDBOX_PORT}{EXCHANGE_PAGE}")
     server.serve_forever()
 
 
