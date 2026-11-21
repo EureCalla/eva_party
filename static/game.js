@@ -613,7 +613,7 @@
       if (!g.claimed) drawGift(tile.ctx, "rest", g.label);
     });
     updateHint();
-    renderFeastReply(data.feast_reply, data.feast_reply_max);
+    renderFeastReply(data.feast_reply, data.feast_reply_min, data.feast_reply_max);
     if (!wallEl.hidden) promptDescription();
   }
 
@@ -679,12 +679,15 @@
   const feastDialog = document.getElementById("feast-reply-dialog");
   const feastForm = document.getElementById("feast-reply-form");
   const feastGift = document.getElementById("feast-reply-gift");
+  const feastGiverName = document.getElementById("feast-giver-name");
+  const feastRule = document.getElementById("feast-reply-rule");
   const feastInput = document.getElementById("feast-reply-input");
   const feastCount = document.getElementById("feast-reply-count");
   const feastError = document.getElementById("feast-reply-error");
   const feastSubmit = document.getElementById("feast-reply-submit");
   const feastStatus = document.getElementById("feast-reply-status");
   let feastReply = null;
+  let feastMin = 4;
   let feastLimit = 50;
   let feastSending = false;
 
@@ -693,15 +696,18 @@
   }
 
   function updateFeastCount() {
-    const length = Array.from(feastText()).length;
+    const text = feastText();
+    const length = Array.from(text).length;
+    const visibleLength = Array.from(text.replace(/\s/gu, "")).length;
     feastCount.textContent = length + " / " + feastLimit;
-    feastSubmit.disabled = feastSending || length === 0 || length > feastLimit;
+    feastSubmit.disabled = feastSending || visibleLength < feastMin || length > feastLimit;
   }
 
-  function renderFeastReply(reply, max) {
+  function renderFeastReply(reply, min, max) {
     const active = stage === "feast" && !!me;
     const changed = feastReply?.gift_id !== reply?.gift_id || feastReply?.giver_name !== reply?.giver_name;
     feastReply = active ? reply : null;
+    if (min) feastMin = min;
     if (max) feastLimit = max;
     feastStatus.hidden = !active || (!!reply && !reply.submitted);
     if (active) {
@@ -716,7 +722,9 @@
       feastError.hidden = true;
     }
     const giftName = reply.animal + "的禮物" + (reply.label ? "（" + reply.label + "）" : "");
-    feastGift.textContent = "你拿到的是 " + giftName + "，由 " + reply.giver_name + " 送出。";
+    feastGift.textContent = "你拿到的是 " + giftName + "。";
+    feastGiverName.textContent = reply.giver_animal + " " + reply.giver_name;
+    feastRule.textContent = "至少 " + feastMin + " 字（空白不算）";
     updateFeastCount();
     if (!feastDialog.open) feastDialog.showModal();
   }
@@ -747,7 +755,7 @@
         feastError.textContent = "禮物資料已更新，請確認後再送出。";
         feastError.hidden = false;
       } else {
-        feastError.textContent = "請寫一句 " + feastLimit + " 字以內的留言。";
+        feastError.textContent = "請寫一句 " + feastMin + " 至 " + feastLimit + " 字的留言。";
         feastError.hidden = false;
       }
     } catch (e) {

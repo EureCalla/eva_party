@@ -34,6 +34,7 @@ PERMISSIONS = ("user", "admin")
 EXCHANGE_ROUND_SEC = 120
 MINIGAME_SEC = 60
 FEAST_STAGE = "feast"
+FEAST_REPLY_MIN = 4
 FEAST_REPLY_MAX = 50
 EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
 GIFT_HEART_LIMIT = 5
@@ -81,6 +82,11 @@ def epoch_to_utc(epoch: float) -> str:
 def draw_seed_now() -> str:
     """Return the current local time as 'yyyymmddhhmm', the seed for shuffling the draw order."""
     return datetime.now().strftime("%Y%m%d%H%M")
+
+
+def feast_reply_length(text: str) -> int:
+    """Count non-whitespace characters for the minimum length."""
+    return sum(not char.isspace() for char in text)
 
 
 class GameDB:
@@ -485,7 +491,8 @@ class GameDB:
                         "animal": gift["animal"],
                         "label": gift["label"],
                         "giver_name": gift["giver_name"],
-                        "submitted": bool(gift["submitted"]),
+                        "giver_animal": gift["giver_animal"],
+                        "submitted": feast_reply_length(gift["reply_message"] or "") >= FEAST_REPLY_MIN,
                     }
             hearts = {}
             if stage == EXCHANGE_STAGE:
@@ -535,7 +542,7 @@ class GameDB:
         """Find the player's final gift and the person who brought it."""
         return self.conn.execute(
             "SELECT g.id AS gift_id, g.animal, g.label, giver.id AS giver_id, giver.en_name AS giver_name, "
-            "reply.gift_id IS NOT NULL AS submitted FROM players g "
+            "giver.animal AS giver_animal, reply.message AS reply_message FROM players g "
             "JOIN players giver ON giver.id = g.claimed_by AND giver.is_deleted = 0 "
             "LEFT JOIN feast_replies reply ON reply.gift_id = g.id AND reply.sender_id = g.winner_id "
             "AND reply.giver_id = giver.id WHERE g.winner_id = ? AND g.is_deleted = 0",
@@ -545,8 +552,8 @@ class GameDB:
     def submit_feast_reply(self, token: str, gift_id: int, message: str) -> str:
         """Save the recipient's required note once for this gift and giver."""
         text = " ".join(message.splitlines()).strip()
-        if not text:
-            return "empty"
+        if feast_reply_length(text) < FEAST_REPLY_MIN:
+            return "too_short"
         if len(text) > FEAST_REPLY_MAX:
             return "too_long"
         with self.lock, self.conn:
@@ -559,9 +566,12 @@ class GameDB:
             gift = self._feast_gift(player["id"])
             if gift is None or gift["gift_id"] != gift_id:
                 return "wrong_gift"
+            if feast_reply_length(gift["reply_message"] or "") >= FEAST_REPLY_MIN:
+                return "ok"
             self.conn.execute(
                 "INSERT INTO feast_replies (gift_id, sender_id, giver_id, message, created_at) VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(gift_id, sender_id, giver_id) DO NOTHING",
+                "ON CONFLICT(gift_id, sender_id, giver_id) DO UPDATE SET "
+                "message = excluded.message, created_at = excluded.created_at",
                 (gift_id, player["id"], gift["giver_id"], text, utc_now()),
             )
         return "ok"

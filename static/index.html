@@ -156,9 +156,16 @@
     <form id="feast-reply-form" class="card">
       <h2 id="feast-reply-title" class="card-title picker-title">給送禮人的一句話</h2>
       <p id="feast-reply-gift" class="card-sub"></p>
+      <p class="feast-giver">
+        <span>送禮的人</span>
+        <strong id="feast-giver-name"></strong>
+      </p>
       <label for="feast-reply-input">請對送禮的人說一句感謝或吐槽的話。</label>
-      <textarea id="feast-reply-input" rows="3" required aria-describedby="feast-reply-count"></textarea>
-      <p id="feast-reply-count" class="desc-count"></p>
+      <textarea id="feast-reply-input" rows="3" required aria-describedby="feast-reply-rule feast-reply-count"></textarea>
+      <div class="feast-reply-meta">
+        <span id="feast-reply-rule"></span>
+        <span id="feast-reply-count"></span>
+      </div>
       <p id="feast-reply-error" class="error" role="alert" hidden></p>
       <button id="feast-reply-submit" type="submit" class="pixel-btn" disabled>確定送出</button>
     </form>
