@@ -183,8 +183,7 @@
 }
 .ex-timer.urgent { color: var(--deep); background: var(--dress); border-color: var(--pink); }
 
-/* 開始前、結果橫幅：舞台正中間的奶油白牌子 */
-.ex-wait,
+/* 結果橫幅：舞台正中間的奶油白牌子 */
 .ex-banner {
   position: absolute;
   left: 50%;

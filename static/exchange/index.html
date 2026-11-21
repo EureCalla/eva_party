@@ -43,7 +43,6 @@
       <canvas id="ex-spot" width="1280" height="760"></canvas>
       <div id="ex-bubble" class="ex-bubble" hidden></div>
       <div id="ex-timer" class="ex-timer" hidden></div>
-      <div id="ex-wait" class="ex-wait" hidden>等待管理者開始</div>
       <div id="ex-banner" class="ex-banner" hidden></div>
       <!-- 小遊戲：倒數結束且有人爭奪時蓋在舞台上；參賽者即時操作，其他人看延遲直播 -->
       <div id="mg" class="mg" hidden>
@@ -96,7 +95,6 @@
     </div>
     <div class="ex-ctrl">
       <span id="ex-count"></span>
-      <button id="ex-start" type="button" class="pixel-btn small" hidden>開始</button>
     </div>
     <p id="ex-finished" class="ex-finished" hidden>交換禮物結束！看看下面誰拿到了什麼</p>
 
@@ -139,7 +137,7 @@
       <button id="ex-reset" type="button" class="pixel-btn small ex-plain" hidden>重置測試資料</button>
       <span id="ex-reset-msg" class="ex-reason"></span>
     </div>
-    <p id="ex-sandbox-note" class="ex-note" hidden>沙盒驗收用：管理者按「開始」後每份禮物倒數，時間到自動換下一份（<code>python sandbox_app.py --round-sec 30</code> 可縮短倒數）；有人爭奪時倒數結束進小遊戲（<code>--game-sec 30</code> 縮短；沒操作的參賽者就站著不動）。到 <a href="/">首頁</a> 用管理頁切回別的階段再切進「交換禮物遊戲」會整局重來。<span id="ex-seed"></span></p>
+    <p id="ex-sandbox-note" class="ex-note" hidden>沙盒驗收用：管理者在禮物牆按「開始」後每份禮物倒數，時間到自動換下一份（<code>python sandbox_app.py --round-sec 30</code> 可縮短倒數）；有人爭奪時倒數結束進小遊戲（<code>--game-sec 30</code> 縮短；沒操作的參賽者就站著不動）。到 <a href="/">首頁</a> 用管理頁切回別的階段再切進「交換禮物遊戲」會整局重來。<span id="ex-seed"></span></p>
   </section>
 
   <script src="../sprites.js"></script>

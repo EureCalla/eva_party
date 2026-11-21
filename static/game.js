@@ -393,7 +393,10 @@
       const label = document.createElement("span");
       label.className = "label";
       label.textContent = g.animal + "的禮物";
-      el.append(cv, tag, label);
+      const description = document.createElement("span");
+      description.className = "gift-description";
+      description.hidden = true;
+      el.append(cv, tag, label, description);
       el.addEventListener("click", () => onGiftClick(g.gift_id));
       giftsEl.appendChild(el);
       const tile = {
@@ -401,6 +404,7 @@
         ctx: cv.getContext("2d"),
         tag,
         label,
+        description,
         animal: g.animal,
         claimed: false,
         giftLabel: null,
@@ -438,7 +442,8 @@
     wallEl.classList.toggle("locked", !seating);
     wallEl.classList.toggle("done", !seating || !!(me && me.gift_id));
     wallEl.classList.toggle("describe", canDescribe()); // 自己的禮物可以點開寫描述
-    if (canDescribe() && !me.description) hintEl.textContent = "標籤公布！點你的禮物寫下禮物描述";
+    if (stage === "exchange" && !exchangeStarted) hintEl.textContent = "等待管理者開始";
+    else if (canDescribe() && !me.description) hintEl.textContent = "標籤公布！點你的禮物寫下禮物描述";
     else if (canDescribe()) hintEl.textContent = (STAGE_HINT[stage] || "") + "（描述隨時可以再修改）";
     else if (!seating) hintEl.textContent = STAGE_HINT[stage] || "";
     else if (me && me.gift_id) hintEl.textContent = "你是" + me.animal + "！點你的禮物可以換標籤";
@@ -453,6 +458,9 @@
   }
 
   const exchangeBtn = document.getElementById("exchange-btn");
+  const exchangeStartBtn = document.getElementById("exchange-start-btn");
+  const exchangeStartError = document.getElementById("exchange-start-error");
+  let exchangeStarted = false;
   const stayOnWall = new URLSearchParams(location.search).get("wall") === "1";
   let goingToExchange = false;
 
@@ -468,6 +476,23 @@
   }
 
   exchangeBtn.addEventListener("click", openExchange);
+  exchangeStartBtn.addEventListener("click", async () => {
+    exchangeStartBtn.disabled = true;
+    exchangeStartError.hidden = true;
+    try {
+      const result = await api("/api/exchange/start", {});
+      await refreshState();
+      if (!result.ok && !exchangeStarted && stage === "exchange") {
+        exchangeStartError.textContent = result.data.result === "empty" ? "目前沒有可交換的禮物" : "無法開始交換禮物";
+        exchangeStartError.hidden = false;
+      }
+    } catch (e) {
+      exchangeStartError.textContent = "連線失敗，請再試一次";
+      exchangeStartError.hidden = false;
+    } finally {
+      exchangeStartBtn.disabled = false;
+    }
+  });
 
   function applyState(data) {
     if (data.labels) labels = data.labels;
@@ -477,9 +502,13 @@
     // 登入的人被管理者刪掉了：回登入頁
     if (token() && !data.me && !wallEl.hidden) return backToLogin();
     if (data.me) me = data.me;
-    const canEnterExchange = stage === "exchange" && !!data.me;
-    exchangeBtn.hidden = !canEnterExchange;
-    if (canEnterExchange && !stayOnWall) return openExchange();
+    exchangeStarted = stage === "exchange" && data.exchange_started === true;
+    exchangeBtn.hidden = !(exchangeStarted && data.me);
+    exchangeStartBtn.hidden = !(stage === "exchange" && !exchangeStarted && data.me && data.me.is_admin);
+    if (exchangeStartBtn.hidden) exchangeStartError.hidden = true;
+    if (exchangeStarted && data.me && !stayOnWall) return openExchange();
+    const showDescriptions = stage === "exchange";
+    wallEl.classList.toggle("public-descriptions", showDescriptions);
     const sig = data.gifts.map((g) => g.gift_id + ":" + g.animal).join(",");
     if (sig !== wallSig) {
       wallSig = sig;
@@ -496,6 +525,9 @@
         tile.tag.style.background = tagColor(g.label);
         tile.drawn = false;
       }
+      const description = showDescriptions ? g.description || "" : "";
+      if (tile.description.textContent !== description) tile.description.textContent = description;
+      tile.description.hidden = !description;
       tile.claimed = g.claimed;
       tile.described = !!g.described;
       tile.el.classList.toggle("claimed", g.claimed);

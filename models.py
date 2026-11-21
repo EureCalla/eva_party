@@ -454,9 +454,11 @@ class GameDB:
         from the reveal stage on, every label is visible. Everyone always sees
         which gifts are claimed. Descriptions are private (only ``described``
         is shared) until DESCRIPTION_PUBLIC_STAGES, where every gift carries
-        its description for the spotlight speech bubble.
+        its description for the gift wall and spotlight.
         """
-        stage = self.get_stage()
+        with self.lock:
+            stage = self.get_stage()
+            exchange_started = stage == EXCHANGE_STAGE and self._current_round() is not None
         reveal_labels = stage != "seating"
         public_desc = stage in DESCRIPTION_PUBLIC_STAGES
         rows = self.conn.execute(
@@ -489,7 +491,7 @@ class GameDB:
                 "description": mine["description"] if mine else None,
                 "is_admin": player["permission"] == "admin",
             }
-        return {"stage": stage, "gifts": gifts, "me": me}
+        return {"stage": stage, "exchange_started": exchange_started, "gifts": gifts, "me": me}
 
     def set_description(self, token: str, text: str) -> str:
         """Set the description on the caller's gift; returns ok / unknown / empty / too_long / not_claimed / locked.

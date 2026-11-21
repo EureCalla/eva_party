@@ -157,6 +157,18 @@ body.scene-cover #scene { object-fit: cover; }
   text-align: center;
   word-break: keep-all;
 }
+.gift-description {
+  width: 100%;
+  color: var(--cream);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+#exchange-start-error { color: var(--cream); }
+@media (max-width: 560px) {
+  #wall.public-descriptions #gifts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .gift.claimed { cursor: default; }
 .gift.mine { border-color: var(--dress); background: rgba(246, 183, 200, 0.18); cursor: pointer; }
 .gift .nope { color: var(--dress); }

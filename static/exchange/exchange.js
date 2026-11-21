@@ -203,7 +203,7 @@
     sessionToken = r.data.token;
     const s = await api("/api/state");
     if (!s.ok || !s.data.me) return goToWall("/");
-    if (s.data.stage !== EXCHANGE_STAGE) return goToWall("/");
+    if (!s.data.exchange_started) return goToWall("/");
     await enterExchange(s.data);
   });
 
@@ -436,9 +436,7 @@
 
   // ---------- 交換回合：倒數、候選人、爭奪（伺服器為準） ----------
   const timerEl = document.getElementById("ex-timer");
-  const waitEl = document.getElementById("ex-wait");
   const bannerEl = document.getElementById("ex-banner");
-  const startBtn = document.getElementById("ex-start");
   const resetBtn = document.getElementById("ex-reset"); // 沙盒專用：重置測試資料
   const joinBtn = document.getElementById("ex-join");
   const leaveBtn = document.getElementById("ex-leave");
@@ -602,7 +600,6 @@
     joinBtn.disabled = !me.can_join;
     const reason = document.getElementById("ex-reason");
     reason.textContent = me.joined ? "你已加入爭奪，倒數結束前可以退出（會退還搶奪券）" : JOIN_REASONS[me.reason] || "";
-    startBtn.hidden = !(me.is_admin && !game.started);
     resetBtn.hidden = !(sandbox && me.is_admin);
   }
 
@@ -620,8 +617,6 @@
       target = order.findIndex((g) => g.gift_id === last);
     }
     if (target >= 0 && target !== cur) turnTo(target);
-    waitEl.hidden = game.started;
-    waitEl.textContent = "等待管理者開始";
     document.getElementById("ex-finished").hidden = !game.finished;
     if (shownResults !== null && game.results.length > shownResults) {
       const r = game.results[game.results.length - 1];
@@ -659,7 +654,6 @@
   }
   joinBtn.addEventListener("click", () => contestAction("/api/exchange/join"));
   leaveBtn.addEventListener("click", () => contestAction("/api/exchange/withdraw"));
-  startBtn.addEventListener("click", () => contestAction("/api/exchange/start"));
 
   // 沙盒專用：重置測試資料（交換進度清空，順序、標籤、描述不動）
   resetBtn.addEventListener("click", async () => {
@@ -767,12 +761,11 @@
     setInterval(async () => {
       const r = await api("/api/state");
       if (!r.ok) return;
-      if (!r.data.me || r.data.stage !== EXCHANGE_STAGE) return goToWall("/");
+      if (!r.data.me || !r.data.exchange_started) return goToWall("/");
       await refresh(r.data);
     }, EXCHANGE_POLL_MS);
   }
 
-  const EXCHANGE_STAGE = "exchange";
   const HANDOFF_KEY = "exchange_handoff_token";
 
   function goToWall(path) {
@@ -800,7 +793,7 @@
       sessionToken = null;
       return false;
     }
-    if (s.data.stage !== EXCHANGE_STAGE) {
+    if (!s.data.exchange_started) {
       goToWall("/");
       return true;
     }
