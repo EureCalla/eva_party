@@ -409,10 +409,23 @@
     piece(ctx, "sign_back", 0, { ax: 25, ay: 11 });
   }
 
+  let tappedGift = null;
+  function clearTappedGift() {
+    tappedGift?.classList.remove("show-description");
+    tappedGift = null;
+  }
+
+  wallEl.addEventListener("click", (e) => {
+    if (tappedGift && !tappedGift.contains(e.target)) clearTappedGift();
+  });
+
   function buildWall(gifts) {
+    clearTappedGift();
     giftsEl.textContent = "";
     tiles.clear();
     gifts.forEach((g) => {
+      const card = document.createElement("div");
+      card.className = "gift-card";
       const el = document.createElement("button");
       el.type = "button";
       el.className = "gift";
@@ -423,15 +436,33 @@
       tag.className = "tag";
       const label = document.createElement("span");
       label.className = "label";
+      label.id = "gift-label-" + g.gift_id;
       label.textContent = g.animal + "的禮物";
-      el.append(cv, tag, label);
+      el.setAttribute("aria-labelledby", label.id);
+      const description = document.createElement("span");
+      description.className = "gift-description";
+      description.id = "gift-description-" + g.gift_id;
+      description.setAttribute("role", "tooltip");
+      description.hidden = true;
+      el.append(cv, tag, label, description);
       el.addEventListener("click", () => onGiftClick(g.gift_id));
-      giftsEl.appendChild(el);
+      const heart = document.createElement("button");
+      heart.type = "button";
+      heart.className = "gift-heart";
+      heart.hidden = true;
+      heart.addEventListener("click", () => setGiftHeart(g.gift_id));
+      card.append(el, heart);
+      giftsEl.appendChild(card);
       const tile = {
         el,
         ctx: cv.getContext("2d"),
         tag,
         label,
+        description,
+        heart,
+        hearted: false,
+        canHeart: false,
+        heartPending: false,
         animal: g.animal,
         claimed: false,
         giftLabel: null,
@@ -497,8 +528,9 @@
   async function takeHomeHandoff() {
     let tk = null;
     try {
-      tk = sessionStorage.getItem(HOME_HANDOFF);
+      tk = sessionStorage.getItem(HOME_HANDOFF) || sessionStorage.getItem("wall_handoff_token");
       sessionStorage.removeItem(HOME_HANDOFF);
+      sessionStorage.removeItem("wall_handoff_token");
     } catch (e) {
       /* 沒有 storage 就照常 */
     }
@@ -517,7 +549,8 @@
     wallEl.classList.toggle("locked", !seating);
     wallEl.classList.toggle("done", !seating || !!(me && me.gift_id));
     wallEl.classList.toggle("describe", canDescribe()); // 自己的禮物可以點開寫描述
-    if (canDescribe() && !me.description) hintEl.textContent = "標籤公布！點你的禮物寫下禮物描述";
+    if (stage === "exchange" && !exchangeStarted) hintEl.textContent = "等待管理者開始";
+    else if (canDescribe() && !me.description) hintEl.textContent = "標籤公布！點你的禮物寫下禮物描述";
     else if (canDescribe()) hintEl.textContent = (STAGE_HINT[stage] || "") + "（描述隨時可以再修改）";
     else if (!seating) hintEl.textContent = STAGE_HINT[stage] || "";
     else if (me && me.gift_id) hintEl.textContent = "你是" + me.animal + "！點你的禮物可以換標籤";
@@ -531,6 +564,75 @@
     if (pickerEl.hidden && adminEl.hidden) openDesc();
   }
 
+  const exchangeBtn = document.getElementById("exchange-btn");
+  const exchangeStartBtn = document.getElementById("exchange-start-btn");
+  const exchangeStartError = document.getElementById("exchange-start-error");
+  const giftDescriptionHint = document.getElementById("gift-description-hint");
+  const giftHeartHint = document.getElementById("gift-heart-hint");
+  const giftHeartNotice = document.getElementById("gift-heart-notice");
+  let giftHeartNoticeTimer;
+  let exchangeStarted = false;
+  const stayOnWall = new URLSearchParams(location.search).get("wall") === "1";
+  let goingToExchange = false;
+
+  function openExchange() {
+    if (goingToExchange) return;
+    goingToExchange = true;
+    try {
+      sessionStorage.setItem("exchange_handoff_token", token());
+    } catch (e) {
+      /* 無法交接登入時，聚光燈頁會顯示登入畫面 */
+    }
+    location.href = "/exchange/";
+  }
+
+  exchangeBtn.addEventListener("click", openExchange);
+  exchangeStartBtn.addEventListener("click", async () => {
+    exchangeStartBtn.disabled = true;
+    exchangeStartError.hidden = true;
+    try {
+      const result = await api("/api/exchange/start", {});
+      await refreshState();
+      if (!result.ok && !exchangeStarted && stage === "exchange") {
+        exchangeStartError.textContent = result.data.result === "empty" ? "目前沒有可交換的禮物" : "無法開始交換禮物";
+        exchangeStartError.hidden = false;
+      }
+    } catch (e) {
+      exchangeStartError.textContent = "連線失敗，請再試一次";
+      exchangeStartError.hidden = false;
+    } finally {
+      exchangeStartBtn.disabled = false;
+    }
+  });
+
+  function showHeartNotice(text) {
+    clearTimeout(giftHeartNoticeTimer);
+    giftHeartNotice.textContent = text;
+    giftHeartNotice.hidden = !text;
+    if (text) giftHeartNoticeTimer = setTimeout(() => { giftHeartNotice.hidden = true; }, 3500);
+  }
+
+  async function setGiftHeart(giftId) {
+    const tile = tiles.get(giftId);
+    if (!tile || !tile.canHeart || tile.heartPending) return;
+    tile.heartPending = true;
+    tile.heart.disabled = true;
+    showHeartNotice("");
+    try {
+      const result = await api("/api/gift-heart", { gift_id: giftId, liked: !tile.hearted });
+      if (result.ok || result.data.result === "locked") {
+        await refreshState();
+      } else {
+        showHeartNotice(result.data.result === "limit" ? "每人最多只能按五個愛心" : "無法更新愛心，請再試一次");
+      }
+    } catch (e) {
+      showHeartNotice("連線失敗，請再試一次");
+    } finally {
+      tile.heartPending = false;
+      tile.heart.disabled = !tile.canHeart;
+    }
+  }
+
   function applyState(data) {
     if (data.labels) labels = data.labels;
     if (data.stages) stages = data.stages;
@@ -539,6 +641,19 @@
     // 登入的人被管理者刪掉了：回登入頁
     if (token() && !data.me && !wallEl.hidden) return backToLogin();
     if (data.me) me = data.me;
+    window.FeastFinale.render(stage === "feast" && data.me ? data.feast_messages : null);
+    exchangeStarted = stage === "exchange" && data.exchange_started === true;
+    exchangeBtn.hidden = !(exchangeStarted && data.me);
+    exchangeStartBtn.hidden = !(stage === "exchange" && !exchangeStarted && data.me && data.me.is_admin);
+    if (exchangeStartBtn.hidden) exchangeStartError.hidden = true;
+    if (exchangeStarted && data.me && !stayOnWall) return openExchange();
+    const showDescriptions = stage === "exchange";
+    giftDescriptionHint.hidden = !showDescriptions;
+    if (!showDescriptions) clearTappedGift();
+    const votingOpen = showDescriptions && !exchangeStarted && !!data.me;
+    giftHeartHint.hidden = !votingOpen;
+    if (!votingOpen) showHeartNotice("");
+    wallEl.classList.toggle("public-descriptions", showDescriptions);
     const sig = data.gifts.map((g) => g.gift_id + ":" + g.animal).join(",");
     if (sig !== wallSig) {
       wallSig = sig;
@@ -555,14 +670,32 @@
         tile.tag.style.background = tagColor(g.label);
         tile.drawn = false;
       }
+      const description = showDescriptions ? g.description || "" : "";
+      if (tile.description.textContent !== description) tile.description.textContent = description;
+      tile.description.hidden = !description;
+      tile.el.classList.toggle("has-description", !!description);
+      if (description) tile.el.setAttribute("aria-describedby", tile.description.id);
+      else tile.el.removeAttribute("aria-describedby");
       tile.claimed = g.claimed;
       tile.described = !!g.described;
       tile.el.classList.toggle("claimed", g.claimed);
-      tile.el.classList.toggle("mine", !!me && me.gift_id === g.gift_id);
+      const mine = !!me && me.gift_id === g.gift_id;
+      tile.el.classList.toggle("mine", mine);
+      tile.hearted = g.hearted === true;
+      tile.canHeart = votingOpen && g.claimed && !mine;
+      tile.heart.hidden = !showDescriptions;
+      tile.heart.disabled = !tile.canHeart || tile.heartPending;
+      if (showDescriptions) {
+        const count = g.heart_count ?? 0;
+        tile.heart.textContent = (tile.hearted ? "♥ " : "♡ ") + count;
+        tile.heart.setAttribute("aria-label", g.animal + "的禮物，" + count + " 個愛心");
+        tile.heart.setAttribute("aria-pressed", String(tile.hearted));
+      }
       if (!g.claimed) drawGift(tile.ctx, "rest", g.label);
     });
     updateHint();
     updateActions();
+    renderFeastReply(data.feast_reply, data.feast_reply_min, data.feast_reply_max);
     if (!wallEl.hidden) promptDescription();
   }
 
@@ -618,9 +751,12 @@
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     me = null;
+    renderFeastReply(null);
+    window.FeastFinale.render(null);
     descPromptedStage = null;
     closePicker();
     closeDesc();
+    clearTappedGift();
     document.getElementById("admin").hidden = true;
     pwEl.hidden = true;
     xrEl.hidden = true;
@@ -631,12 +767,115 @@
     }
   }
 
+  const feastDialog = document.getElementById("feast-reply-dialog");
+  const feastForm = document.getElementById("feast-reply-form");
+  const feastGift = document.getElementById("feast-reply-gift");
+  const feastGiverName = document.getElementById("feast-giver-name");
+  const feastRule = document.getElementById("feast-reply-rule");
+  const feastInput = document.getElementById("feast-reply-input");
+  const feastCount = document.getElementById("feast-reply-count");
+  const feastError = document.getElementById("feast-reply-error");
+  const feastSubmit = document.getElementById("feast-reply-submit");
+  const feastStatus = document.getElementById("feast-reply-status");
+  let feastReply = null;
+  let feastMin = 4;
+  let feastLimit = 50;
+  let feastSending = false;
+
+  function feastText() {
+    return feastInput.value.replace(/\r?\n/g, " ").trim();
+  }
+
+  function updateFeastCount() {
+    const text = feastText();
+    const length = Array.from(text).length;
+    const visibleLength = Array.from(text.replace(/\s/gu, "")).length;
+    feastCount.textContent = length + " / " + feastLimit;
+    feastSubmit.disabled = feastSending || visibleLength < feastMin || length > feastLimit;
+  }
+
+  function renderFeastReply(reply, min, max) {
+    const active = stage === "feast" && !!me;
+    const changed = feastReply?.gift_id !== reply?.gift_id || feastReply?.giver_name !== reply?.giver_name;
+    feastReply = active ? reply : null;
+    if (min) feastMin = min;
+    if (max) feastLimit = max;
+    feastStatus.hidden = !active || (!!reply && !reply.submitted);
+    if (active) {
+      feastStatus.textContent = reply ? "留言已送出。" : "目前沒有可留言的禮物。";
+    }
+    if (!active || !reply || reply.submitted) {
+      if (feastDialog.open) feastDialog.close();
+      return;
+    }
+    if (changed || !feastDialog.open) {
+      feastInput.value = "";
+      feastError.hidden = true;
+    }
+    const giftName = reply.animal + "的禮物" + (reply.label ? "（" + reply.label + "）" : "");
+    feastGift.textContent = "你拿到的是 " + giftName + "。";
+    feastGiverName.textContent = reply.giver_animal + " " + reply.giver_name;
+    feastRule.textContent = "至少 " + feastMin + " 字（空白不算）";
+    updateFeastCount();
+    if (!feastDialog.open) feastDialog.showModal();
+  }
+
+  feastDialog.addEventListener("cancel", (e) => e.preventDefault());
+  feastInput.addEventListener("input", () => {
+    feastError.hidden = true;
+    updateFeastCount();
+  });
+  feastForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (feastSubmit.disabled || !feastReply) return;
+    const reply = feastReply;
+    feastSending = true;
+    feastInput.readOnly = true;
+    feastError.hidden = true;
+    updateFeastCount();
+    try {
+      const result = await api("/api/feast-reply", { gift_id: reply.gift_id, message: feastText() });
+      if (result.ok) {
+        if (feastReply?.gift_id === reply.gift_id && feastReply?.giver_name === reply.giver_name) {
+          renderFeastReply({ ...reply, submitted: true });
+          await refreshState();
+        }
+      } else if (result.status === 401) {
+        backToLogin();
+      } else if (result.data.result === "locked" || result.data.result === "wrong_gift") {
+        await refreshState();
+        feastError.textContent = "禮物資料已更新，請確認後再送出。";
+        feastError.hidden = false;
+      } else {
+        feastError.textContent = "請寫一句 " + feastMin + " 至 " + feastLimit + " 字的留言。";
+        feastError.hidden = false;
+      }
+    } catch (e) {
+      feastError.textContent = "連線失敗，請再試一次";
+      feastError.hidden = false;
+    } finally {
+      feastSending = false;
+      feastInput.readOnly = false;
+      updateFeastCount();
+    }
+  });
+
   async function onGiftClick(giftId) {
     const tile = tiles.get(giftId);
     if (!tile) return;
-    // 公布標籤、交換禮物：點自己的禮物寫／改描述；其他禮物只能看
+    // 自己的禮物可編輯；觸控裝置可點別人的禮物查看介紹。
     if (stage !== "seating") {
-      if (canDescribe() && me.gift_id === giftId) openDesc();
+      if (canDescribe() && me.gift_id === giftId) {
+        clearTappedGift();
+        openDesc();
+      } else if (stage === "exchange" && !tile.description.hidden && window.matchMedia("(hover: none)").matches) {
+        const wasOpen = tappedGift === tile.el;
+        clearTappedGift();
+        if (!wasOpen) {
+          tappedGift = tile.el;
+          tappedGift.classList.add("show-description");
+        }
+      }
       return;
     }
     if (me && me.gift_id === giftId) return openPicker();
@@ -1017,5 +1256,5 @@
   // ---------- 開場 ----------
   show("intro");
   requestAnimationFrame(sceneFrame);
-  takeHomeHandoff();
+  takeHomeHandoff().catch(() => backToLogin());
 })();

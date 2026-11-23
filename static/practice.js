@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  // 試玩大廳：自己＋3 個電腦練習五款小遊戲。對戰畫面沿用 sandbox/*.js 的五個模組，
+  // 試玩大廳：自己＋3 個電腦練習五款小遊戲。對戰畫面沿用 exchange/*.js 的五個模組，
   // 這裡只負責大廳、規則、開局，並假裝成交換禮物頁餵給模組（bridge＋回合狀態）。
   const POLL_MS = 250;
   const HANDOFF_IN = "practice_handoff_token"; // 禮物牆交過來

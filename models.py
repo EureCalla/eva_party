@@ -27,10 +27,18 @@ from migrations import (
     m008_add_game_kind,
     m009_add_exchange_transfers,
     m010_add_password_changed,
+    m010_add_gift_hearts,
+    m011_add_feast_replies,
 )
 
 PERMISSIONS = ("user", "admin")
+EXCHANGE_ROUND_SEC = 120
+MINIGAME_SEC = 60
+FEAST_STAGE = "feast"
+FEAST_REPLY_MIN = 4
+FEAST_REPLY_MAX = 50
 EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
+GIFT_HEART_LIMIT = 5
 DESCRIPTION_MAX = 50  # 禮物描述字數上限
 DESCRIBE_STAGES = ("reveal", "exchange")  # 可以寫／改禮物描述的階段
 DESCRIPTION_PUBLIC_STAGES = ("exchange", "feast")  # 描述對所有人公開的階段（聚光燈講話框）
@@ -79,6 +87,11 @@ def draw_seed_now() -> str:
     return datetime.now().strftime("%Y%m%d%H%M")
 
 
+def feast_reply_length(text: str) -> int:
+    """Count non-whitespace characters for the minimum length."""
+    return sum(not char.isspace() for char in text)
+
+
 class GameDB:
     """Players, login sessions and gift claims.
 
@@ -105,20 +118,22 @@ class GameDB:
             m008_add_game_kind.apply(self.conn)
             m009_add_exchange_transfers.apply(self.conn)
             m010_add_password_changed.apply(self.conn)
+            m010_add_gift_hearts.apply(self.conn)
+            m011_add_feast_replies.apply(self.conn)
         # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
-        self.round_sec: float = cms.EXCHANGE_ROUND_SEC
+        self.round_sec: float = EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
         self.start_tickets: int = cms.START_TICKETS
         # 小遊戲參數；沙盒可改 game_sec 縮短
         self.game_prep_sec: float = cms.GAME_PREP_SEC
-        self.game_sec: float = cms.GAME_SEC
+        self.game_sec: float = MINIGAME_SEC
         self.game_reveal_sec: float = cms.GAME_REVEAL_SEC
         self.game_hp: int = cms.GAME_HP
-        self.count_game_sec: float = cms.COUNT_GAME_SEC
+        self.count_game_sec: float = MINIGAME_SEC
         self.count_bots: int = cms.COUNT_BOTS
-        self.climb_game_sec: float = cms.CLIMB_GAME_SEC
-        self.spell_game_sec: float = cms.SPELL_GAME_SEC
-        self.mom_game_sec: float = cms.MOM_GAME_SEC
+        self.climb_game_sec: float = MINIGAME_SEC
+        self.spell_game_sec: float = MINIGAME_SEC
+        self.mom_game_sec: float = MINIGAME_SEC
         self.game_mode: str = "random"  # 小遊戲種類：random（隨機）／stones／count／climb／spell／mom；沙盒可指定
         self.spin_sec: float = cms.SPIN_SEC
         self.battle: StoneBattle | CountBattle | ClimbBattle | SpellBattle | MomBattle | None = None  # 進行中的小遊戲（只在記憶體）
@@ -279,6 +294,11 @@ class GameDB:
             ).fetchone()
             if row is None:
                 raise ValueError("找不到這個使用者")
+            self.conn.execute(
+                "DELETE FROM gift_hearts WHERE voter_id = ? OR gift_id = ? "
+                "OR gift_id IN (SELECT id FROM players WHERE claimed_by = ?)",
+                (player_id, player_id, player_id),
+            )
             self.conn.execute(
                 "UPDATE players SET claimed_by = NULL, claimed_at = NULL, label = NULL, labeled_at = NULL, "
                 "description = NULL, described_at = NULL WHERE claimed_by = ?",
@@ -546,16 +566,43 @@ class GameDB:
         from the reveal stage on, every label is visible. Everyone always sees
         which gifts are claimed. Descriptions are private (only ``described``
         is shared) until DESCRIPTION_PUBLIC_STAGES, where every gift carries
-        its description for the spotlight speech bubble.
+        its description for the gift wall and spotlight.
         """
-        stage = self.get_stage()
+        with self.lock:
+            stage = self.get_stage()
+            exchange_started = stage == EXCHANGE_STAGE and self._current_round() is not None
+            rows = self.conn.execute(
+                "SELECT id, animal, claimed_by, label, description FROM players WHERE is_deleted = 0 ORDER BY gift_order"
+            ).fetchall()
+            player = self.player_by_token(token) if token else None
+            my_id = player["id"] if player is not None else None
+            feast_reply = None
+            feast_messages = None
+            if stage == FEAST_STAGE and my_id is not None:
+                gift = self._feast_gift(my_id)
+                if gift is not None:
+                    feast_reply = {
+                        "gift_id": gift["gift_id"],
+                        "animal": gift["animal"],
+                        "label": gift["label"],
+                        "giver_name": gift["giver_name"],
+                        "giver_animal": gift["giver_animal"],
+                        "submitted": feast_reply_length(gift["reply_message"] or "") >= FEAST_REPLY_MIN,
+                    }
+                if feast_reply is None or feast_reply["submitted"]:
+                    feast_messages = self._feast_messages()
+            hearts = {}
+            if stage == EXCHANGE_STAGE:
+                hearts = {
+                    row["gift_id"]: (row["total"], bool(row["mine"]))
+                    for row in self.conn.execute(
+                        "SELECT gift_id, COUNT(*) AS total, MAX(voter_id = ?) AS mine "
+                        "FROM gift_hearts GROUP BY gift_id",
+                        (my_id,),
+                    )
+                }
         reveal_labels = stage != "seating"
         public_desc = stage in DESCRIPTION_PUBLIC_STAGES
-        rows = self.conn.execute(
-            "SELECT id, animal, claimed_by, label, description FROM players WHERE is_deleted = 0 ORDER BY gift_order"
-        ).fetchall()
-        player = self.player_by_token(token) if token else None
-        my_id = player["id"] if player is not None else None
         # 公布標籤階段：描述內容只回給寫的人，其他人只知道寫了沒（寫好的禮物跳得比較快）
         # 交換禮物起：描述公開，聚光燈下的禮物用講話框顯示
         gifts = []
@@ -569,6 +616,8 @@ class GameDB:
             }
             if public_desc:
                 gift["description"] = r["description"]
+            if stage == EXCHANGE_STAGE:
+                gift["heart_count"], gift["hearted"] = hearts.get(r["id"], (0, False))
             gifts.append(gift)
         me: dict[str, Any] | None = None
         if player is not None:
@@ -581,7 +630,90 @@ class GameDB:
                 "description": mine["description"] if mine else None,
                 "is_admin": player["permission"] == "admin",
             }
-        return {"stage": stage, "gifts": gifts, "me": me}
+        return {
+            "stage": stage, "exchange_started": exchange_started, "gifts": gifts, "me": me,
+            "feast_reply": feast_reply, "feast_messages": feast_messages,
+        }
+
+    def _feast_gift(self, sender_id: int) -> sqlite3.Row | None:
+        """Find the player's final gift and the person who brought it."""
+        return self.conn.execute(
+            "SELECT g.id AS gift_id, g.animal, g.label, giver.id AS giver_id, giver.en_name AS giver_name, "
+            "giver.animal AS giver_animal, reply.message AS reply_message FROM players g "
+            "JOIN players giver ON giver.id = g.claimed_by AND giver.is_deleted = 0 "
+            "LEFT JOIN feast_replies reply ON reply.gift_id = g.id AND reply.sender_id = g.winner_id "
+            "AND reply.giver_id = giver.id WHERE g.winner_id = ? AND g.is_deleted = 0",
+            (sender_id,),
+        ).fetchone()
+
+    def _feast_messages(self) -> list[dict[str, Any]]:
+        """List valid notes for the current exchange's final gift assignments."""
+        rows = self.conn.execute(
+            "SELECT sender.animal AS sender_animal, sender.en_name AS sender_name, "
+            "giver.animal AS giver_animal, giver.en_name AS giver_name, reply.message "
+            "FROM feast_replies reply "
+            "JOIN players gift ON gift.id = reply.gift_id AND gift.is_deleted = 0 "
+            "AND gift.winner_id = reply.sender_id AND gift.claimed_by = reply.giver_id "
+            "JOIN players sender ON sender.id = reply.sender_id AND sender.is_deleted = 0 "
+            "JOIN players giver ON giver.id = reply.giver_id AND giver.is_deleted = 0 "
+            "ORDER BY reply.created_at, reply.gift_id"
+        )
+        return [dict(row) for row in rows if feast_reply_length(row["message"]) >= FEAST_REPLY_MIN]
+
+    def submit_feast_reply(self, token: str, gift_id: int, message: str) -> str:
+        """Save the recipient's required note once for this gift and giver."""
+        text = " ".join(message.splitlines()).strip()
+        if feast_reply_length(text) < FEAST_REPLY_MIN:
+            return "too_short"
+        if len(text) > FEAST_REPLY_MAX:
+            return "too_long"
+        with self.lock, self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            player = self.player_by_token(token) if token else None
+            if player is None:
+                return "unknown"
+            if self.get_stage() != FEAST_STAGE:
+                return "locked"
+            gift = self._feast_gift(player["id"])
+            if gift is None or gift["gift_id"] != gift_id:
+                return "wrong_gift"
+            if feast_reply_length(gift["reply_message"] or "") >= FEAST_REPLY_MIN:
+                return "ok"
+            self.conn.execute(
+                "INSERT INTO feast_replies (gift_id, sender_id, giver_id, message, created_at) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(gift_id, sender_id, giver_id) DO UPDATE SET "
+                "message = excluded.message, created_at = excluded.created_at",
+                (gift_id, player["id"], gift["giver_id"], text, utc_now()),
+            )
+        return "ok"
+
+    def set_gift_heart(self, token: str, gift_id: int, liked: bool) -> str:
+        """Set a player's heart while the gift wall is waiting for the exchange to start."""
+        with self.lock, self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            player = self.player_by_token(token) if token else None
+            if player is None:
+                return "unknown"
+            if self.get_stage() != EXCHANGE_STAGE or self._current_round() is not None:
+                return "locked"
+            gift = self.conn.execute(
+                "SELECT claimed_by FROM players WHERE id = ? AND is_deleted = 0", (gift_id,)
+            ).fetchone()
+            if gift is None or gift["claimed_by"] is None:
+                return "unavailable"
+            voter = player["id"]
+            if gift["claimed_by"] == voter:
+                return "own_gift"
+            if not liked:
+                self.conn.execute("DELETE FROM gift_hearts WHERE voter_id = ? AND gift_id = ?", (voter, gift_id))
+                return "ok"
+            votes = self.conn.execute("SELECT gift_id FROM gift_hearts WHERE voter_id = ?", (voter,)).fetchall()
+            if any(row["gift_id"] == gift_id for row in votes):
+                return "ok"
+            if len(votes) >= GIFT_HEART_LIMIT:
+                return "limit"
+            self.conn.execute("INSERT INTO gift_hearts (voter_id, gift_id) VALUES (?, ?)", (voter, gift_id))
+            return "ok"
 
     def set_description(self, token: str, text: str) -> str:
         """Set the description on the caller's gift; returns ok / unknown / empty / too_long / not_claimed / locked.

@@ -159,8 +159,17 @@ body.scene-cover #scene { object-fit: cover; }
   max-width: 760px;
   margin: 0 auto;
 }
-.gift {
+.gift-card {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.gift {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex: 1;
   flex-direction: column;
   align-items: center;
   gap: 4px;
@@ -177,6 +186,86 @@ body.scene-cover #scene { object-fit: cover; }
   line-height: 1.25;
   text-align: center;
   word-break: keep-all;
+}
+.gift-description {
+  position: absolute;
+  z-index: 2;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100% + 4px);
+  padding: 0.4rem;
+  border: 2px solid var(--outline);
+  background: var(--cream);
+  color: var(--deep);
+  box-shadow: 3px 3px 0 var(--deep);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  visibility: hidden;
+  pointer-events: none;
+}
+.gift-description::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--outline);
+  border-bottom: 2px solid var(--outline);
+  background: var(--cream);
+  transform: translateX(-50%) rotate(45deg);
+}
+.gift:focus-visible .gift-description,
+.gift.show-description .gift-description { visibility: visible; }
+@media (hover: hover) {
+  .gift:hover .gift-description { visibility: visible; }
+}
+#exchange-start-error,
+#gift-description-hint,
+#gift-heart-hint { color: var(--cream); }
+#gift-description-hint,
+#gift-heart-hint { margin: -6px 0 12px; }
+.gift-description-touch { display: none; }
+@media (hover: none) {
+  .gift-description-mouse { display: none; }
+  .gift-description-touch { display: inline; }
+}
+.gift-heart {
+  min-width: 4rem;
+  min-height: 2.75rem;
+  margin: 4px 0 0;
+  border: 2px solid var(--cream-line);
+  color: var(--cream);
+  background: var(--deep);
+  font: inherit;
+  cursor: pointer;
+}
+.gift-heart[aria-pressed="true"],
+.gift-heart:not(:disabled):hover {
+  color: var(--deep);
+  background: var(--dress);
+}
+.gift-heart:disabled { cursor: default; }
+#gift-heart-notice {
+  position: fixed;
+  z-index: 6;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 2rem);
+  margin: 0;
+  padding: 0.65rem 1rem;
+  border: 3px solid var(--outline);
+  color: var(--deep);
+  background: var(--cream);
+  box-shadow: 4px 4px 0 var(--deep);
+  text-align: center;
+  pointer-events: none;
+}
+@media (max-width: 560px) {
+  #wall.public-descriptions #gifts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .gift.claimed { cursor: default; }
 .gift.mine { border-color: var(--dress); background: rgba(246, 183, 200, 0.18); cursor: pointer; }
@@ -342,6 +431,7 @@ body.scene-cover #scene { object-fit: cover; }
   border: 2px solid var(--outline);
 }
 #wall.locked .gift { cursor: default; }
+#wall.public-descriptions .gift.has-description,
 #wall.describe .gift.mine { cursor: pointer; } /* 公布標籤起：點自己的禮物寫描述 */
 
 /* ---------- 管理頁 ---------- */
@@ -468,7 +558,38 @@ body.scene-cover #scene { object-fit: cover; }
 }
 
 /* ---------- 禮物描述 ---------- */
-#desc-input {
+#feast-reply-dialog {
+  max-width: calc(100% - 32px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+#feast-reply-dialog::backdrop { background: rgba(58, 36, 24, 0.72); }
+#feast-reply-status { color: var(--cream); }
+.feast-giver {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 3px solid var(--outline);
+  background: var(--dress);
+  color: var(--deep);
+  text-align: center;
+}
+.feast-giver span { font-size: 0.8rem; }
+.feast-giver strong { font-size: 1.28rem; overflow-wrap: anywhere; }
+.feast-reply-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: -8px;
+  color: var(--blue);
+  font-size: 0.85rem;
+}
+#desc-input,
+#feast-reply-input {
   font: inherit;
   font-size: 1rem;
   padding: 8px 10px;
@@ -498,4 +619,97 @@ body.scene-cover #scene { object-fit: cover; }
   padding: 2px 10px;
   background: var(--dress);
   border: 2px solid var(--outline);
+}
+
+/* 相框的位置對應預告片大結局的定格畫面。 */
+#wall.feast-finale-open {
+  padding: 0;
+  background: #151016;
+}
+#wall.feast-finale-open > .wall-head,
+#wall.feast-finale-open > #gifts { display: none; }
+#feast-finale {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-content: center;
+  place-items: center;
+  gap: 0.65rem;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 0.75rem 0 max(0.75rem, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.feast-frame {
+  position: relative;
+  width: min(100%, calc((100vh - 6rem) * 16 / 9));
+  width: min(100%, calc((100dvh - 6rem) * 16 / 9));
+  aspect-ratio: 16 / 9;
+}
+.feast-callout {
+  max-width: calc(100% - 2rem);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.45rem 0.85rem;
+  border: 2px solid var(--pink-frame);
+  background: #2b1c26;
+  color: var(--cream);
+  font-size: clamp(0.95rem, 2.5vw, 1.25rem);
+  line-height: 1.45;
+  text-align: center;
+}
+.feast-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#feast-photo {
+  position: absolute;
+  top: 30.381%;
+  left: 49.932%;
+  width: 45.247%;
+  height: 45.247%;
+  transform: translate(-50%, -50%) rotate(-1.82deg);
+  overflow: hidden;
+}
+#feast-photo::before {
+  position: absolute;
+  inset: 0;
+  background: rgba(21, 16, 22, 0.28);
+  content: "";
+}
+#feast-photo-comments { position: absolute; inset: 0; }
+#feast-photo-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: #fff6ea;
+  text-shadow: 1px 2px 3px #21151c;
+  font-size: clamp(0.72rem, 1.5vw, 1.1rem);
+}
+.feast-comment {
+  position: absolute;
+  left: 0;
+  margin: 0;
+  padding: 0.2em 0.55em;
+  color: #fff6ea;
+  background: rgba(33, 21, 28, 0.82);
+  font-size: clamp(0.72rem, 1.5vw, 1.1rem);
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.feast-comment strong { color: #ffc5db; }
+#feast-photo.still #feast-photo-comments {
+  display: grid;
+  align-content: start;
+  gap: 0.22rem;
+  padding: 0.25rem;
+  overflow: auto;
+}
+#feast-photo.still .feast-comment {
+  position: static;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

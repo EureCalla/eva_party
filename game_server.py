@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import mpivr20_cms as cms
 from minigame import map_info
-from models import DESCRIPTION_MAX, GameDB
+from models import DESCRIPTION_MAX, FEAST_REPLY_MAX, FEAST_REPLY_MIN, GameDB
 
 # 還沒改暗號（公布標籤起的一般人）也能打的 API；其餘一律回 403 must_change
 # 小遊戲 API 每秒很多次、且沒改暗號的人進不了爭奪，不在這裡多查一次 DB
@@ -26,6 +26,7 @@ class GameHandler(SimpleHTTPRequestHandler):
     # 保持連線（keep-alive）：小遊戲每秒很多請求，省掉每次重新連線；閒置 30 秒就關
     protocol_version = "HTTP/1.1"
     timeout = 30
+    sandbox = False
 
     def __init__(self, *args: Any, db: GameDB, **kwargs: Any) -> None:
         """Keep a reference to the shared GameDB."""
@@ -89,6 +90,9 @@ class GameHandler(SimpleHTTPRequestHandler):
             data["labels"] = cms.GIFT_LABELS
             data["stages"] = [{"key": k, "name": n} for k, n in cms.STAGES]
             data["description_max"] = DESCRIPTION_MAX
+            data["feast_reply_min"] = FEAST_REPLY_MIN
+            data["feast_reply_max"] = FEAST_REPLY_MAX
+            data["sandbox"] = self.sandbox
             self.send_json(data)
         elif self.path == "/api/exchange":
             self.send_json(self.db.exchange_state(self.headers.get("X-Token")))
@@ -211,6 +215,22 @@ class GameHandler(SimpleHTTPRequestHandler):
             result = self.db.set_label(self.headers.get("X-Token", ""), str(data.get("label", "")), cms.GIFT_LABELS)
             status = {"ok": 200, "unknown": 401, "invalid": 400, "not_claimed": 409, "locked": 409}[result]
             self.send_json({"result": result}, status)
+        elif self.path == "/api/feast-reply":
+            gift_id, message = data.get("gift_id"), data.get("message")
+            if type(gift_id) is not int or not isinstance(message, str):
+                self.send_json({"result": "invalid"}, 400)
+                return
+            result = self.db.submit_feast_reply(self.headers.get("X-Token", ""), gift_id, message)
+            status = {"ok": 200, "unknown": 401, "locked": 409, "wrong_gift": 409, "too_short": 400, "too_long": 400}
+            self.send_json({"result": result}, status[result])
+        elif self.path == "/api/gift-heart":
+            gift_id, liked = data.get("gift_id"), data.get("liked")
+            if type(gift_id) is not int or type(liked) is not bool:
+                self.send_json({"result": "invalid"}, 400)
+                return
+            result = self.db.set_gift_heart(self.headers.get("X-Token", ""), gift_id, liked)
+            status = {"ok": 200, "unknown": 401, "locked": 409, "unavailable": 404, "own_gift": 403, "limit": 409}
+            self.send_json({"result": result}, status[result])
         elif self.path == "/api/exchange/start":
             result = self.db.start_exchange(self.headers.get("X-Token", ""))
             status = {"ok": 200, "forbidden": 403, "locked": 409, "started": 409, "empty": 409}[result]
