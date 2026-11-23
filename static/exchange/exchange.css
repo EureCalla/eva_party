@@ -1,4 +1,4 @@
-/* 沙盒・交換禮物遊戲：共用 ../style.css 的色票與元件，這裡只放本頁新增的部分 */
+/* 交換禮物遊戲：共用 ../style.css 的色票與元件，這裡只放本頁新增的部分 */
 
 #sandbox-badge {
   position: fixed;
@@ -183,8 +183,7 @@
 }
 .ex-timer.urgent { color: var(--deep); background: var(--dress); border-color: var(--pink); }
 
-/* 開始前、結果橫幅：舞台正中間的奶油白牌子 */
-.ex-wait,
+/* 結果橫幅：舞台正中間的奶油白牌子 */
 .ex-banner {
   position: absolute;
   left: 50%;
@@ -207,6 +206,8 @@
   to { transform: translate(-50%, -50%) scale(1); }
 }
 .ex-finished { max-width: 960px; margin: 12px auto 0; color: var(--dress); font-size: 1.2rem; text-align: center; }
+.ex-feast-controls { margin: 12px auto 0; color: var(--cream); text-align: center; }
+.ex-feast-controls p { margin: 8px 0 0; }
 
 /* 爭奪區、誰拿到了 */
 .ex-panel {
