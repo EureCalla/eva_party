@@ -26,6 +26,7 @@ from migrations import (
     m007_add_minigame,
     m008_add_game_kind,
     m009_add_exchange_transfers,
+    m010_add_password_changed,
 )
 
 PERMISSIONS = ("user", "admin")
@@ -33,6 +34,8 @@ EXCHANGE_STAGE = "exchange"  # 進入這個階段時重新洗抽獎順序
 DESCRIPTION_MAX = 50  # 禮物描述字數上限
 DESCRIBE_STAGES = ("reveal", "exchange")  # 可以寫／改禮物描述的階段
 DESCRIPTION_PUBLIC_STAGES = ("exchange", "feast")  # 描述對所有人公開的階段（聚光燈講話框）
+PRACTICE_STAGE = "reveal"  # 試玩大廳開放的階段
+PRIVATE_PASSWORD_STAGE = "reveal"  # 從這個階段起：一般人登入要先改一次暗號、管理頁看不到別人的暗號
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS players (
@@ -101,6 +104,7 @@ class GameDB:
             m007_add_minigame.apply(self.conn)
             m008_add_game_kind.apply(self.conn)
             m009_add_exchange_transfers.apply(self.conn)
+            m010_add_password_changed.apply(self.conn)
         # 交換禮物遊戲參數；沙盒可改 round_sec 縮短測試
         self.round_sec: float = cms.EXCHANGE_ROUND_SEC
         self.max_challengers: int = cms.MAX_CHALLENGERS
@@ -122,6 +126,8 @@ class GameDB:
         self.battle_spin_end: float = 0.0  # 轉盤轉完的時間；之前不公開遊戲種類
         self.battle_round_id: int | None = None
         self._token_ids: dict[str, int] = {}  # 小遊戲每秒很多次請求，token→player id 快取免得一直查 DB
+        # 試玩大廳：每人一局「自己＋電腦」的小遊戲，只在記憶體、不寫 DB，跟正式交換禮物完全分開
+        self.practice: dict[int, dict[str, Any]] = {}  # player id -> {"kind", "battle"}
         print(f"[models] DB ready: {db_path}")
 
     def player_count(self) -> int:
@@ -194,7 +200,7 @@ class GameDB:
                 self.conn.execute(
                     "UPDATE players SET animal = ?, password = ?, permission = ?, gift_order = ?, claimed_by = NULL, "
                     "claimed_at = NULL, label = NULL, labeled_at = NULL, description = NULL, described_at = NULL, "
-                    "is_deleted = 0, deleted_at = NULL WHERE id = ?",
+                    "password_changed = 0, is_deleted = 0, deleted_at = NULL WHERE id = ?",
                     (animal, password, permission, order, old["id"]),
                 )
                 new_id = old["id"]
@@ -217,13 +223,15 @@ class GameDB:
         permission: str,
         password: str | None,
         role_passwords: dict[str, str],
+        keep_password: bool = False,
     ) -> None:
         """Edit a player's name, animal, permission and password; claims and labels are kept.
 
         When the permission changes and no new password was typed, the password
         switches to that role's default (``role_passwords``). A typed password
-        always wins. Raises ValueError on empty fields, an unknown permission or
-        a duplicate name.
+        always wins. With ``keep_password`` (the password is hidden from the
+        admin) the password is never touched. Raises ValueError on empty fields,
+        an unknown permission or a duplicate name.
         """
         en_name, animal = en_name.strip(), animal.strip()
         if not en_name or not animal:
@@ -241,17 +249,19 @@ class GameDB:
             ).fetchone()
             if dup:
                 raise ValueError(f"{en_name} 已經有人用了")
-            typed = (password or "").strip()
-            if password is not None and not typed:
+            typed = "" if keep_password else (password or "").strip()
+            if password is not None and not keep_password and not typed:
                 raise ValueError("暗號不能是空白")
             if typed and typed != row["password"]:
                 new_password = typed
-            elif permission != row["permission"]:
+            elif permission != row["permission"] and not keep_password:
                 new_password = role_passwords[permission]
             else:
                 new_password = row["password"]
+            # 管理者幫忙改了暗號＝不再是本人設的，（公布標籤起）下次登入要再改一次
+            changed_flag = "password_changed = 0, " if new_password != row["password"] else ""
             self.conn.execute(
-                "UPDATE players SET en_name = ?, animal = ?, permission = ?, password = ? WHERE id = ?",
+                f"UPDATE players SET {changed_flag}en_name = ?, animal = ?, permission = ?, password = ? WHERE id = ?",
                 (en_name, animal, permission, new_password, player_id),
             )
             self.conn.commit()
@@ -287,8 +297,19 @@ class GameDB:
             "WHERE is_deleted = 0 ORDER BY gift_order"
         ).fetchall()
 
-    def admin_players(self) -> list[dict[str, Any]]:
-        """Return players for the admin page, alphabetical, with password, guess status and label."""
+    def passwords_private(self) -> bool:
+        """Return True from PRIVATE_PASSWORD_STAGE on: passwords are personal and hidden from admins."""
+        stage = self.get_stage()
+        keys = cms.STAGE_KEYS
+        return stage in keys and keys.index(stage) >= keys.index(PRIVATE_PASSWORD_STAGE)
+
+    def admin_players(self, viewer_id: int | None = None) -> list[dict[str, Any]]:
+        """Return players for the admin page, alphabetical, with password, guess status and label.
+
+        From PRIVATE_PASSWORD_STAGE on, every password except the viewer's own
+        is left out (``password`` is None and ``masked`` is True).
+        """
+        private = self.passwords_private()
         rows = self.conn.execute(
             "SELECT p.id, p.en_name, p.animal, p.permission, p.password, g.label AS my_label, g.id AS my_gift "
             "FROM players p LEFT JOIN players g ON g.claimed_by = p.id AND g.is_deleted = 0 "
@@ -300,7 +321,8 @@ class GameDB:
                 "en_name": r["en_name"],
                 "animal": r["animal"],
                 "admin": r["permission"] == "admin",
-                "password": r["password"],
+                "password": None if private and r["id"] != viewer_id else r["password"],
+                "masked": private and r["id"] != viewer_id,
                 "guessed": r["my_gift"] is not None,
                 "label": r["my_label"],
             }
@@ -323,8 +345,10 @@ class GameDB:
         """Set every non-admin's password at once (admins only); returns how many were changed.
 
         The value is also saved as settings.user_password, so players added or
-        demoted later get the same password. Raises PermissionError for
-        non-admins and ValueError for a blank password.
+        demoted later get the same password. Everyone it overwrites counts as
+        not having set their own password any more. Raises PermissionError for
+        non-admins, ValueError for a blank password and RuntimeError from
+        PRIVATE_PASSWORD_STAGE on (it would wipe everyone's own password).
         """
         password = password.strip()
         if not password:
@@ -333,8 +357,11 @@ class GameDB:
             player = self.player_by_token(token) if token else None
             if player is None or player["permission"] != "admin":
                 raise PermissionError("只有管理者可以使用")
+            if self.passwords_private():
+                raise RuntimeError("公布標籤之後大家都有自己的暗號，不能再一次全改")
             cur = self.conn.execute(
-                "UPDATE players SET password = ? WHERE permission = 'user' AND is_deleted = 0", (password,)
+                "UPDATE players SET password = ?, password_changed = 0 WHERE permission = 'user' AND is_deleted = 0",
+                (password,),
             )
             self.conn.execute(
                 "INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('user_password', ?, ?, ?) "
@@ -388,6 +415,9 @@ class GameDB:
         Entering the exchange stage from another stage reshuffles the draw
         order, seeded with the switch time (yyyymmddhhmm), so going back and
         entering again gives a new order.
+
+        Every real switch (forward or back) logs everyone out, the admin who
+        switched included, so each player starts again from the login page.
         """
         if stage not in allowed:
             return "invalid", {}
@@ -410,6 +440,8 @@ class GameDB:
             if stage == EXCHANGE_STAGE and before != EXCHANGE_STAGE:
                 self._shuffle_draw_order(None, player["id"])
                 self._reset_exchange()  # 重新進入交換禮物＝整局重來
+            if stage != before:
+                self._logout_all()
         print(f"[models] stage -> {stage} by {player['en_name']}")
         return "ok", {}
 
@@ -444,6 +476,68 @@ class GameDB:
             "WHERE s.token = ? AND s.is_deleted = 0 AND p.is_deleted = 0",
             (token,),
         ).fetchone()
+
+    def _logout_all(self) -> None:
+        """End every login session (soft delete); caller holds the lock."""
+        cur = self.conn.execute(
+            "UPDATE sessions SET is_deleted = 1, deleted_at = ? WHERE is_deleted = 0", (utc_now(),)
+        )
+        self.conn.commit()
+        self._token_ids.clear()
+        self.practice.clear()
+        print(f"[models] logged everyone out: {cur.rowcount} sessions")
+
+    def must_change_password(self, token: str | None) -> bool:
+        """Return True when this session's player must set their own password before playing.
+
+        Only non-admins who still have the shared password, and only from
+        PRIVATE_PASSWORD_STAGE on.
+        """
+        player = self.player_by_token(token) if token else None
+        if player is None or player["permission"] != "user" or player["password_changed"]:
+            return False
+        return self.passwords_private()
+
+    def change_password(self, token: str, password: str, confirm: str) -> str:
+        """Set the caller's own password; returns ok / unknown / empty / mismatch.
+
+        The two entries must match and must not be blank; nothing else is checked.
+        """
+        password, confirm = password.strip(), confirm.strip()
+        with self.lock:
+            player = self.player_by_token(token) if token else None
+            if player is None:
+                return "unknown"
+            if not password:
+                return "empty"
+            if password != confirm:
+                return "mismatch"
+            self.conn.execute(
+                "UPDATE players SET password = ?, password_changed = 1 WHERE id = ?", (password, player["id"])
+            )
+            self.conn.commit()
+        print(f"[models] password changed by {player['en_name']}")
+        return "ok"
+
+    def reset_password(self, player_id: int, role_passwords: dict[str, str]) -> str:
+        """Put a player's password back to their role's default; returns the player's name.
+
+        The player has to set their own password again at the next login (from
+        PRIVATE_PASSWORD_STAGE on). Raises ValueError for an unknown player.
+        """
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT en_name, permission FROM players WHERE id = ? AND is_deleted = 0", (player_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("找不到這個使用者")
+            self.conn.execute(
+                "UPDATE players SET password = ?, password_changed = 0 WHERE id = ?",
+                (role_passwords[row["permission"]], player_id),
+            )
+            self.conn.commit()
+        print(f"[models] password reset: {row['en_name']}")
+        return row["en_name"]
 
     def state(self, token: str | None) -> dict[str, Any]:
         """Return the stage, the gift wall in display order, and the caller's own claim.
@@ -745,16 +839,7 @@ class GameDB:
         players = [{"id": pid, "name": rows[pid]["en_name"], "label": rows[pid]["label"]} for pid in pool if pid in rows]
         kind = self.game_mode if self.game_mode in cms.MINIGAMES else secrets.SystemRandom().choice(list(cms.MINIGAMES))
         prep_epoch = game_epoch + self.spin_sec  # 先轉盤，再進準備
-        if kind == "count":
-            self.battle = CountBattle(players, prep_epoch, self.game_prep_sec, self.count_game_sec, self.count_bots)
-        elif kind == "climb":
-            self.battle = ClimbBattle(players, prep_epoch, self.game_prep_sec, self.climb_game_sec)
-        elif kind == "spell":
-            self.battle = SpellBattle(players, prep_epoch, self.game_prep_sec, self.spell_game_sec)
-        elif kind == "mom":
-            self.battle = MomBattle(players, prep_epoch, self.game_prep_sec, self.mom_game_sec)
-        else:
-            self.battle = StoneBattle(players, prep_epoch, self.game_prep_sec, self.game_sec, self.game_hp)
+        self.battle = self._make_battle(kind, players, prep_epoch, self.game_prep_sec)
         self.battle_kind = kind
         self.battle_spin_end = prep_epoch
         self.battle_round_id = round_id
@@ -762,6 +847,21 @@ class GameDB:
         self.conn.commit()
         self._token_ids.clear()
         print(f"[models] minigame started: round {round_id}, {cms.MINIGAMES[kind]}, {len(players)} players")
+
+    def _make_battle(
+        self, kind: str, players: list[dict[str, Any]], prep_epoch: float, prep_sec: float, bots: int | None = None,
+    ) -> StoneBattle | CountBattle | ClimbBattle | SpellBattle | MomBattle:
+        """Create a minigame of ``kind``; ``bots`` None = the real exchange's setting (only counting has bots)."""
+        extra: dict[str, Any] = {} if bots is None else {"bots": bots}
+        if kind == "count":
+            return CountBattle(players, prep_epoch, prep_sec, self.count_game_sec, self.count_bots if bots is None else bots)
+        if kind == "climb":
+            return ClimbBattle(players, prep_epoch, prep_sec, self.climb_game_sec, **extra)
+        if kind == "spell":
+            return SpellBattle(players, prep_epoch, prep_sec, self.spell_game_sec, **extra)
+        if kind == "mom":
+            return MomBattle(players, prep_epoch, prep_sec, self.mom_game_sec, **extra)
+        return StoneBattle(players, prep_epoch, prep_sec, self.game_sec, self.game_hp, **extra)
 
     def _battle_for(self, rnd: sqlite3.Row) -> StoneBattle | CountBattle | None:
         """Return the in-memory minigame of a 'game' round, or None when it was lost (server restarted)."""
@@ -1101,16 +1201,110 @@ class GameDB:
                 pid = self._token_ids[token] = row["id"]
         return pid
 
+    def _live_battle(
+        self, pid: int, practice: bool,
+    ) -> StoneBattle | CountBattle | ClimbBattle | SpellBattle | MomBattle | None:
+        """Return the minigame this player is operating: their practice match, or the real one after the wheel."""
+        if practice:
+            run = self.practice.get(pid)
+            return run["battle"] if run else None
+        if self.battle is None or self.clock() < self.battle_spin_end:
+            return None
+        return self.battle
+
+    # ---------- 試玩大廳：自己＋電腦，只在公布標籤階段、寫好禮物描述的人 ----------
+
+    def _practice_block(self, player: sqlite3.Row) -> str | None:
+        """Return why this player cannot practice (not_open / no_description), or None."""
+        if self.get_stage() != PRACTICE_STAGE:
+            return "not_open"
+        row = self.conn.execute(
+            "SELECT description FROM players WHERE claimed_by = ? AND is_deleted = 0", (player["id"],)
+        ).fetchone()
+        if row is None or not (row["description"] or "").strip():
+            return "no_description"
+        return None
+
+    def practice_start(self, token: str, kind: str) -> str:
+        """Start a practice match of ``kind`` against PRACTICE_BOTS computers; returns ok / unknown / invalid / not_open / no_description.
+
+        A new start replaces the player's previous practice match.
+        """
+        if kind not in cms.MINIGAMES:
+            return "invalid"
+        with self.lock:
+            player = self.player_by_token(token) if token else None
+            if player is None:
+                return "unknown"
+            block = self._practice_block(player)
+            if block is not None:
+                return block
+            gift = self.conn.execute(
+                "SELECT label FROM players WHERE claimed_by = ? AND is_deleted = 0", (player["id"],)
+            ).fetchone()
+            players = [{"id": player["id"], "name": player["en_name"], "label": gift["label"] if gift else None}]
+            battle = self._make_battle(kind, players, self.clock(), cms.PRACTICE_PREP_SEC, cms.PRACTICE_BOTS)
+            self.practice[player["id"]] = {"kind": kind, "battle": battle}
+        print(f"[models] practice started: {player['en_name']}, {cms.MINIGAMES[kind]}")
+        return "ok"
+
+    def practice_state(self, token: str) -> tuple[str, dict[str, Any] | None]:
+        """Return the caller's practice match shaped like exchange_state()'s round, so the minigame screens can reuse it.
+
+        Returns (ok, data) or (unknown | not_open | no_description, None).
+        ``data["round"]`` is None when no match was started yet.
+        """
+        with self.lock:
+            player = self.player_by_token(token) if token else None
+            if player is None:
+                return "unknown", None
+            block = self._practice_block(player)
+            if block is not None:
+                return block, None
+            run = self.practice.get(player["id"])
+            # 大廳備註「有 bug 回報給管理者」用的名單
+            admins = [
+                r["en_name"] for r in self.conn.execute(
+                    "SELECT en_name FROM players WHERE permission = 'admin' AND is_deleted = 0 "
+                    "ORDER BY en_name COLLATE NOCASE"
+                )
+            ]
+        now = self.clock()
+        round_info = None
+        if run is not None:
+            battle = run["battle"]
+            battle.advance(now)  # 電腦要動、時間到要結算；真人沒在操作時也照樣推進
+            phase = battle.phase(now)
+            ranking = battle.ranking
+            round_info = {
+                "phase": "reveal" if phase == "over" else phase,
+                "game": run["kind"],
+                "game_name": cms.MINIGAMES[run["kind"]],
+                "play_start": battle.play_start,
+                "play_end": battle.play_end,
+                "finished_at": battle.finished_at,
+                "reveal_end": None,
+                "ranking": ranking,
+                "winner_name": ranking[0]["name"] if ranking else None,  # 試玩：第一名（可能是電腦）
+            }
+        return "ok", {
+            "now": now,
+            "round": round_info,
+            "me": {"name": player["en_name"], "in_game": True},
+            "admins": admins,
+            "minigames": [{"key": k, "name": n} for k, n in cms.MINIGAMES.items()],
+        }
+
     def minigame_input(
         self, token: str, x: float, y: float, fx: int, fy: int, throw: bool,
-        seq: int | None = None, power: float = 0.5,
+        seq: int | None = None, power: float = 0.5, practice: bool = False,
     ) -> tuple[str, dict[str, Any] | None]:
         """Report a player's move/throw; returns (ok, live snapshot) / (unknown|no_game|not_player, None)."""
         pid = self._player_id(token)
         if pid is None:
             return "unknown", None
-        battle = self.battle
-        if battle is None or self.clock() < self.battle_spin_end:
+        battle = self._live_battle(pid, practice)
+        if battle is None:
             return "no_game", None
         if not isinstance(battle, StoneBattle):
             return "not_player", None
@@ -1120,7 +1314,7 @@ class GameDB:
         snap["me"] = pid
         return "ok", snap
 
-    def minigame_count(self, token: str, n: int | None) -> tuple[str, dict[str, Any] | None]:
+    def minigame_count(self, token: str, n: int | None, practice: bool = False) -> tuple[str, dict[str, Any] | None]:
         """Call a number in the counting game (or poll when ``n`` is None); returns (ok, snapshot with result).
 
         Errors: (unknown | no_game | not_player, None).
@@ -1128,8 +1322,8 @@ class GameDB:
         pid = self._player_id(token)
         if pid is None:
             return "unknown", None
-        battle = self.battle
-        if battle is None or self.clock() < self.battle_spin_end:
+        battle = self._live_battle(pid, practice)
+        if battle is None:
             return "no_game", None
         if not isinstance(battle, CountBattle):
             return "not_player", None
@@ -1141,14 +1335,14 @@ class GameDB:
 
     def minigame_climb(
         self, token: str, x: float, y: float, vy: float, grounded: bool, face: int, move: int,
-        seq: int | None = None, have: int = 0, kick_ack: int = 0, land: tuple[float, float] | None = None,
+        seq: int | None = None, have: int = 0, kick_ack: int = 0, land: tuple[float, float] | None = None, practice: bool = False,
     ) -> tuple[str, dict[str, Any] | None]:
         """Report a climbing-game player's own position; returns (ok, live snapshot) / (unknown|no_game|not_player, None)."""
         pid = self._player_id(token)
         if pid is None:
             return "unknown", None
-        battle = self.battle
-        if battle is None or self.clock() < self.battle_spin_end:
+        battle = self._live_battle(pid, practice)
+        if battle is None:
             return "no_game", None
         if not isinstance(battle, ClimbBattle):
             return "not_player", None
@@ -1159,7 +1353,7 @@ class GameDB:
         return "ok", snap
 
     def minigame_spell(
-        self, token: str, word_id: int | None, keys: str, start: int | None = None,
+        self, token: str, word_id: int | None, keys: str, start: int | None = None, practice: bool = False,
     ) -> tuple[str, dict[str, Any] | None]:
         """Type letters in the typing-spell game (or poll with ""); returns (ok, snapshot with results).
 
@@ -1168,8 +1362,8 @@ class GameDB:
         pid = self._player_id(token)
         if pid is None:
             return "unknown", None
-        battle = self.battle
-        if battle is None or self.clock() < self.battle_spin_end:
+        battle = self._live_battle(pid, practice)
+        if battle is None:
             return "no_game", None
         if not isinstance(battle, SpellBattle):
             return "not_player", None
@@ -1180,7 +1374,7 @@ class GameDB:
         return "ok", snap
 
     def minigame_mom(
-        self, token: str, hold: bool, spits: list[int], seq: int | None = None,
+        self, token: str, hold: bool, spits: list[int], seq: int | None = None, practice: bool = False,
     ) -> tuple[str, dict[str, Any] | None]:
         """Report the right button (eating) and spit clicks in the Mom game; returns (ok, snapshot) or an error.
 
@@ -1189,8 +1383,8 @@ class GameDB:
         pid = self._player_id(token)
         if pid is None:
             return "unknown", None
-        battle = self.battle
-        if battle is None or self.clock() < self.battle_spin_end:
+        battle = self._live_battle(pid, practice)
+        if battle is None:
             return "no_game", None
         if not isinstance(battle, MomBattle):
             return "not_player", None

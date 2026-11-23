@@ -20,6 +20,8 @@ import threading
 from collections import deque
 from typing import Any
 
+from countgame import BOT_NAMES
+
 # 座標單位是「格」；y 往上為正，(x, y) 是腳底中央。第 k 層平台的上緣在 y = k × FLOOR_H
 WIDTH = 24.0  # 場地寬（左右是牆）
 FLOOR_H = 3.0  # 每層高度
@@ -61,6 +63,21 @@ HOLE_OPEN = 1.0  # 開著的秒數
 HOLE_WARN = 0.6
 TIME_TOLS = (0.0, -0.12, -0.25, 0.1)  # 判斷腳下時往前後多看幾個時間點（網路延遲、時鐘誤差）
 NORMAL, MOVING, HOLE = 0, 1, 2
+# 電腦玩家（試玩大廳用；正式比賽 bots=0 完全不會用到）。難度「普通、偶爾失誤」
+BOT_HESITATE = (0.1, 0.4)  # 走到起跳點後猶豫多久才跳（秒，隨機）
+BOT_LINGER = 0.08  # 每層有這個機率多停一下
+BOT_LINGER_SEC = (0.5, 1.2)  # 多停幾秒（秒，隨機）
+BOT_LEAD_WAIT = (0.0, 0.5)  # 自己單獨領先時每層再多等多久：不會一路領先把別人甩出畫面
+BOT_MERCY_SEC = (0.5, 1.5)  # 自己在最高層、再往上會把落後兩層的人擠出畫面時，最多再等多久（之後照樣跳）
+BOT_MISS = 0.12  # 每次起跳有這個機率瞄偏（多半沒跳上、掉回下面）
+BOT_MISS_DX = (1.5, 3.0)  # 瞄偏時落點往目標平台外側偏多少（格）
+BOT_JUMP_DX = 3.6  # 目標落點離自己水平多遠以內才起跳（一跳最多橫移約 4.3 格；平台間距最多 2.5＋邊緣餘裕約 3.15）
+BOT_AIM_IN = 0.45  # 落點瞄準平台邊緣往內多少（格）
+BOT_EDGE = 0.2  # 在平台上走動時離邊緣至少多少（腳底中央；身體半寬 0.4 內都還站得住）
+BOT_ARRIVE = 0.15  # 離起跳點多近算走到了
+BOT_HOLE_LEAD = 0.8  # 開洞前幾秒就避開洞口
+BOT_HOLE_SAFE = 0.75  # 離洞中央多近算危險（身體在洞中央 ±0.4 內會掉下去）
+BOT_AIR_T = (JUMP_V + math.sqrt(JUMP_V ** 2 - 2 * GRAVITY * FLOOR_H)) / GRAVITY  # 跳上一層約幾秒落地
 
 
 def gap(a0: float, a1: float, b0: float, b1: float) -> float:
@@ -128,9 +145,13 @@ class ClimbBattle:
 
     def __init__(
         self, players: list[dict[str, Any]], prep_epoch: float, prep_sec: float, play_sec: float,
-        rng: random.Random | None = None,
+        rng: random.Random | None = None, bots: int = 0,
     ) -> None:
-        """Line ``players`` ([{id, name, label}]) up on the ground floor and lay out the first floors."""
+        """Line ``players`` ([{id, name, label}]) and ``bots`` computer players up on the ground floor.
+
+        Computer players (ids -1, -2, ...) are moved by the server every step;
+        with ``bots=0`` (the real match) nothing about the game changes.
+        """
         self.rng = rng or random.SystemRandom()
         self.lock = threading.Lock()
         self.play_start = prep_epoch + prep_sec
@@ -138,17 +159,23 @@ class ClimbBattle:
         self.t = self.play_start  # 模擬時間
         self.finished_at: float | None = None
         self.ranking: list[dict[str, Any]] | None = None
-        self.roster = [{"id": p["id"], "name": p["name"], "label": p.get("label")} for p in players]
+        self.roster = [{"id": p["id"], "name": p["name"], "label": p.get("label"), "bot": False} for p in players]
+        self.roster += [
+            {"id": -(i + 1), "name": BOT_NAMES[i % len(BOT_NAMES)], "label": None, "bot": True} for i in range(bots)
+        ]
         self.players: dict[int, dict[str, Any]] = {}
-        n = max(1, len(players))
-        for i, p in enumerate(players):
+        n = max(1, len(self.roster))
+        for i, r in enumerate(self.roster):
             x = WIDTH * (i + 1) / (n + 1)
-            self.players[p["id"]] = {
-                "id": p["id"], "x": x, "y": 0.0, "vx": 0.0, "vy": 0.0, "face": 1 if x < WIDTH / 2 else -1,
+            self.players[r["id"]] = {
+                "id": r["id"], "x": x, "y": 0.0, "vx": 0.0, "vy": 0.0, "face": 1 if x < WIDTH / 2 else -1,
                 "grounded": True, "floor": 0, "support_y": 0.0, "alive": True, "out_at": None,
                 "seq": -1, "checked_at": self.play_start, "budget": 0.5, "seen_at": self.play_start,
-                "move": 0, "kicks": [], "kick_seq": 0,
+                "move": 0, "kicks": [], "kick_seq": 0, "bot": r["bot"],
             }
+            if r["bot"]:
+                # 電腦的計畫：替哪一層選了目標平台、目標、何時起跳、這次起跳瞄偏多少
+                self.players[r["id"]].update({"plan_floor": None, "target": None, "ready_at": None, "aim_err": 0.0})
         self.platforms: list[list[float]] = []  # [層, 左緣, 右緣, 種類, 相位]；第 0 層是整排地板，不放在這裡
         self.top_built = 0
         self._build_to(GEN_AHEAD)
@@ -279,7 +306,11 @@ class ClimbBattle:
         """Advance one fixed step: players who stopped reporting fall, the screen catches up, falling out, frames."""
         self.t += DT
         for p in self.players.values():
-            if p["alive"] and self.t - p["seen_at"] > STALE_SEC:
+            if not p["alive"]:
+                continue
+            if p["bot"]:
+                self._bot_step(p)
+            elif self.t - p["seen_at"] > STALE_SEC:
                 self._fall(p)
         for p in self.players.values():
             if p["alive"] and p["y"] + BODY_H < self.camera:
@@ -307,6 +338,10 @@ class ClimbBattle:
             p["vy"], p["grounded"] = 0.0, True
             return
         p["grounded"] = False
+        self._drop(p, tau)
+
+    def _drop(self, p: dict[str, Any], tau: float) -> bool:
+        """Apply one step of gravity to an airborne player; land them on a floor they fall onto (True if landed)."""
         prev = p["y"]
         p["vy"] -= GRAVITY * DT
         p["y"] += p["vy"] * DT
@@ -321,7 +356,8 @@ class ClimbBattle:
                 if prev >= top >= p["y"]:
                     p["y"], p["vy"], p["grounded"] = top, 0.0, True
                     self._stand(p, k)
-                    break
+                    return True
+        return False
 
     def _stand(self, p: dict[str, Any], floor: int) -> None:
         """A player is standing on ``floor``: record it, move the screen up for a new top floor, build ahead."""
@@ -333,8 +369,11 @@ class ClimbBattle:
             self._build_to(floor + GEN_AHEAD)
 
     def _check_end(self, at: float) -> None:
-        """End early when at most one player is left."""
-        if self.finished_at is None and sum(1 for p in self.players.values() if p["alive"]) <= 1:
+        """End early when at most one player is left, or (with computers) no real player is left."""
+        if self.finished_at is not None:
+            return
+        alive = [p for p in self.players.values() if p["alive"]]
+        if len(alive) <= 1 or not any(not p["bot"] for p in alive):
             self._finish(at)
 
     def _finish(self, at: float) -> None:
@@ -349,7 +388,8 @@ class ClimbBattle:
         order.sort(key=lambda p: (0, -p["floor"]) if p["alive"] else (1, -(p["out_at"] or 0.0)))
         names = {r["id"]: r["name"] for r in self.roster}
         self.ranking = [
-            {"rank": i + 1, "id": p["id"], "name": names[p["id"]], "floor": p["floor"], "alive": p["alive"]}
+            {"rank": i + 1, "id": p["id"], "name": names[p["id"]], "floor": p["floor"], "alive": p["alive"],
+             "bot": p["bot"]}
             for i, p in enumerate(order)
         ]
         self.frames.append(self._frame())
@@ -357,8 +397,167 @@ class ClimbBattle:
 
     @property
     def winner(self) -> int | None:
-        """Return the winner's player id once the match is over."""
-        return self.ranking[0]["id"] if self.ranking else None
+        """Return the best real player's id once the match is over (computers cannot take the gift)."""
+        if not self.ranking:
+            return None
+        return next((r["id"] for r in self.ranking if not r["bot"]), None)
+
+    # ---------- 電腦玩家 ----------
+
+    def _bot_step(self, p: dict[str, Any]) -> None:
+        """Move one computer player for this step with the same physics the page uses.
+
+        站著時：選上一層跳得到的平台、走到起跳點、猶豫一下再跳（偶爾瞄偏）；在空中往落點修正方向。
+        站在移動地板上跟著走；開洞前避開洞口；被撞會被擊退，走路撞到人也會把人撞開。
+        """
+        tau = self._tau()
+        p["vx"] *= math.exp(-5 * DT)  # 擊退速度衰減（同伺服器代為下墜）
+        jump = self._bot_think(p, tau) if p["grounded"] else self._bot_steer(p, tau)
+        carry = 0.0
+        if p["grounded"]:
+            pf = self._platform_at(p["x"], p["y"], (tau,))
+            carry = platform_velocity(pf, tau) if pf is not None else 0.0  # 站在移動地板上跟著走
+        p["x"] = min(max(p["x"] + (p["move"] * SPEED + p["vx"] + carry) * DT, BODY_W / 2), WIDTH - BODY_W / 2)
+        if p["move"]:
+            p["face"] = p["move"]
+        if p["grounded"] and jump:
+            p["vy"], p["grounded"] = JUMP_V, False
+        elif p["grounded"]:
+            if self._platform_under(p["x"], p["y"]) is not None:
+                p["vy"] = 0.0
+                self._bump(p)
+                return
+            p["vy"], p["grounded"] = 0.0, False  # 走出邊緣、或腳下的洞打開了
+        if self._drop(p, tau):
+            p["plan_floor"] = None  # 落地後重新規劃（跳上去了、或沒跳上掉回來）
+        # 電腦只在地上走路時撞人（上面站著的分支）；空中調整方向不撞，免得跳上來順手把旁邊的人撞飛
+
+    def _bot_aims(self, pf: list[float], tau: float) -> list[tuple[float, float]]:
+        """Return the stretches of ``pf`` a computer aims to land on at ``tau`` (holed ones: only the two sides)."""
+        x0, x1 = pf[1], pf[2]
+        if pf[3] == HOLE:
+            c = (x0 + x1) / 2
+            spans = [(x0, c - HOLE_W / 2), (c + HOLE_W / 2, x1)]  # 不管開不開都瞄兩側，免得落地時剛好開洞
+        else:
+            off = platform_offset(pf, tau)
+            spans = [(x0 + off, x1 + off)]
+        return [(a + BOT_AIM_IN, b - BOT_AIM_IN) for a, b in spans]
+
+    def _bot_aim_x(self, pf: list[float], x: float, tau: float) -> float:
+        """Return the point of ``pf`` (at ``tau``) closest to ``x`` that is safe to land on."""
+        best = None
+        for a, b in self._bot_aims(pf, tau):
+            xt = min(max(x, a), b)
+            if best is None or abs(xt - x) < abs(best - x):
+                best = xt
+        return best if best is not None else (pf[1] + pf[2]) / 2
+
+    def _bot_plan(self, p: dict[str, Any], own: list[float] | None) -> None:
+        """Pick the platform one floor up that is easiest to reach from where ``p`` stands."""
+        k = p["floor"]
+        if own is None:
+            lo, hi = 0.0, WIDTH
+        else:
+            amp = MOVE_AMP if own[3] == MOVING else 0.0
+            lo, hi = own[1] - amp, own[2] + amp
+        best, best_key = None, None
+        for pf in self.platforms:
+            if pf[0] != k + 1:
+                continue
+            amp = MOVE_AMP if pf[3] == MOVING else 0.0
+            key = (gap(lo, hi, pf[1] - amp, pf[2] + amp), abs((pf[1] + pf[2]) / 2 - p["x"]))
+            if best_key is None or key < best_key:
+                best, best_key = pf, key
+        p["plan_floor"], p["target"], p["ready_at"] = k, best, None
+
+    def _bot_think(self, p: dict[str, Any], tau: float) -> bool:
+        """Decide a standing computer's walk (``p["move"]``); return True to jump this step."""
+        own = None if abs(p["y"]) <= FOOT_TOL else self._platform_at(p["x"], p["y"], (tau,))
+        if p["plan_floor"] != p["floor"] or p["target"] is None:
+            self._bot_plan(p, own)
+        tgt = p["target"]
+        if tgt is None:
+            p["move"] = 0
+            return False
+        if own is None:
+            lo, hi = BODY_W / 2, WIDTH - BODY_W / 2
+        else:
+            off = platform_offset(own, tau)
+            lo, hi = own[1] + off + BOT_EDGE, own[2] + off - BOT_EDGE
+        xt = self._bot_aim_x(tgt, p["x"], tau + BOT_AIR_T)  # 落地時目標平台的位置
+        spot = min(max(xt, lo), hi)  # 起跳點：自己平台上離落點最近的地方
+        dx = spot - p["x"]
+        move = 0 if abs(dx) <= BOT_ARRIVE else (1 if dx > 0 else -1)
+        if own is not None and own[3] == HOLE:
+            c = (own[1] + own[2]) / 2
+            u = (tau + own[4]) % (HOLE_CLOSED + HOLE_OPEN)
+            if u >= HOLE_CLOSED - BOT_HOLE_LEAD:  # 洞快打開或開著：離開洞口、不要走進去
+                if abs(p["x"] - c) < BOT_HOLE_SAFE:
+                    move = 1 if p["x"] >= c else -1
+                elif move and (c - p["x"]) * move > 0 and abs(p["x"] - c) < BOT_HOLE_SAFE + 0.3:
+                    move = 0
+        if move and self._bot_blocked(p, move):
+            move = 0  # 前面有別的電腦擋著（同方向或在等）：讓一下，電腦之間不互撞
+        p["move"] = move
+        if abs(xt - p["x"]) > BOT_JUMP_DX:
+            p["ready_at"] = None  # 還跳不到（還沒走到、或移動地板還沒靠過來）
+            return False
+        others = [q["floor"] for q in self.players.values() if q is not p and q["alive"]]
+        leading = bool(others) and p["floor"] > max(others)
+        # 再往上一層畫面就會上移，把落後兩層以上的人擠出去：先等等他們（有上限）
+        mercy = p["floor"] >= self.top_floor and any(f <= p["floor"] - 2 for f in others)
+        behind = p["floor"] <= self.top_floor - 2  # 快掉出畫面了
+        if p["ready_at"] is None:
+            if move:
+                return False  # 跳得到了，但先走到起跳點站好
+            # 走到起跳點：先猶豫一下；偶爾多停一下；單獨領先時再放慢（各自記到何時為止）
+            p["ready_at"] = self.t + self.rng.uniform(*BOT_HESITATE)
+            linger = self.rng.uniform(*BOT_LINGER_SEC) if self.rng.random() < BOT_LINGER else 0.0
+            p["linger_until"] = p["ready_at"] + linger
+            p["lead_until"] = p["linger_until"] + self.rng.uniform(*BOT_LEAD_WAIT)
+            p["mercy_until"] = p["lead_until"] + self.rng.uniform(*BOT_MERCY_SEC)
+            return False
+        if self.t < p["ready_at"]:
+            return False
+        if not behind:  # 快掉出畫面時不再拖
+            if self.t < p["linger_until"] or (leading and self.t < p["lead_until"]):
+                return False  # 被追過就不再為領先放慢
+            if mercy and self.t < p["mercy_until"]:
+                return False
+        p["ready_at"] = None
+        p["aim_err"] = 0.0
+        if self.rng.random() < BOT_MISS:
+            # 瞄偏：落點往目標平台外側偏，多半會沒跳上
+            side = -1.0 if xt < (tgt[1] + tgt[2]) / 2 + platform_offset(tgt, tau + BOT_AIR_T) else 1.0
+            p["aim_err"] = side * self.rng.uniform(*BOT_MISS_DX)
+        return True
+
+    def _bot_blocked(self, p: dict[str, Any], move: int) -> bool:
+        """Return True when another computer stands right ahead of ``p`` and is not walking toward it."""
+        for q in self.players.values():
+            if q is p or not q["alive"] or not q["bot"] or abs(q["y"] - p["y"]) > BODY_H * 0.8:
+                continue
+            dx = (q["x"] - p["x"]) * move
+            if 0 <= dx <= BODY_W + 0.3 and q["move"] != -move:
+                return True
+        return False
+
+    def _bot_steer(self, p: dict[str, Any], tau: float) -> bool:
+        """Steer an airborne computer toward its landing spot (never jumps)."""
+        tgt = p["target"]
+        p["move"] = 0
+        if tgt is None or p["plan_floor"] is None:
+            return False
+        top = tgt[0] * FLOOR_H
+        disc = p["vy"] ** 2 + 2 * GRAVITY * (p["y"] - top)
+        if disc < 0 or tgt[0] != p["plan_floor"] + 1:
+            return False  # 已經搆不到（被撞飛或掉下去），隨它落
+        t_land = (p["vy"] + math.sqrt(disc)) / GRAVITY
+        xt = self._bot_aim_x(tgt, p["x"], tau + t_land) + p["aim_err"]
+        dx = xt - p["x"]
+        if abs(dx) > 0.1:
+            p["move"] = 1 if dx > 0 else -1
+        return False
 
     # ---------- 玩家操作 ----------
 
@@ -381,7 +580,7 @@ class ClimbBattle:
         with self.lock:
             self._advance(now)
             p = self.players.get(pid)
-            if p is None:
+            if p is None or p["bot"]:
                 return None
             p["kicks"] = [k for k in p["kicks"] if k[0] > kick_ack]
             corrected = False
@@ -471,7 +670,7 @@ class ClimbBattle:
             q["kicks"] = q["kicks"][-8:]
             # 被撞的人沒在回報（伺服器代為下墜）時，直接套用擊退
             q["vx"] = direction * PUSH_V
-            if self.t - q["seen_at"] > STALE_SEC:
+            if q["bot"] or self.t - q["seen_at"] > STALE_SEC:
                 q["vy"], q["grounded"] = PUSH_UP, False
             print(f"[climbgame] {p['id']} bumped {q['id']}")
 

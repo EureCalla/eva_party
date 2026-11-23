@@ -15,6 +15,8 @@ import threading
 from collections import deque
 from typing import Any
 
+from countgame import BOT_NAMES
+
 # 俯視地圖 32×20：# 牆、T 聖誕樹、S 雪人、G 禮物堆（都擋路也擋石頭），. 空地
 MAP_ROWS: list[str] = [
     "################################",
@@ -84,6 +86,25 @@ FIRE_RANGE = 7.0
 FIRE_AIM_OFF = 0.6  # 玩家離 8 方向射線多近才噴
 DROP_LOCK_SEC = 10.0  # 被打中掉出來的禮物，原本的主人幾秒內不能撿回去
 
+# 電腦玩家（試玩大廳用；正式比賽 bots=0 完全不會用到）：難度「普通、偶爾失誤」
+BOT_SPEED = 0.9  # 走速是真人 SPEED 的幾倍（略慢一點）
+BOT_REACT = (0.3, 0.6)  # 反應延遲：多久重新選一次目標／轉向（秒，隨機）
+BOT_THROW_REACT = (0.3, 0.7)  # 丟完一顆後，除了冷卻還要多愣多久才會再丟（秒，隨機）
+BOT_AIM_OFF = 0.45  # 目標離 8 方向射線多近才算瞄準了（格）
+BOT_RANGE_EXTRA = 0.6  # 算力道時多丟幾格，確保飛得到目標
+BOT_MISS_CHANCE = 0.22  # 丟偏的機率（一半偏 45 度、一半力道不足掉在前面）
+BOT_DAZE_PER_SEC = 0.1  # 每秒有多少機率突然發呆
+BOT_DAZE_SEC = 0.5  # 發呆多久（秒）
+BOT_GIFT_CHANCE = 0.3  # 選目標時改去撿地上禮物的機率
+BOT_GIFT_NEAR = 3.0  # 地上禮物（或受傷時的補血）在幾格內就順手去撿
+BOT_STONE_NEAR = 2.0  # 手上沒滿、附近幾格內有石頭就順手撿
+BOT_MONSTER_BIAS = 0.8  # 選目標時怪物的距離打幾折（怪物會掉禮物，稍微偏好）
+BOT_KEEP_DIST = (3.0, 7.0)  # 跟目標保持的距離範圍（格）：站到目標的 8 方向射線上再丟
+BOT_DODGE_CHANCE = 0.55  # 發現火球／石頭飛來或被怪物對準時，成功側移躲避的機率
+BOT_DODGE_LOOK = 3.5  # 飛行物在幾格內才會注意到
+BOT_DODGE_SEC = 0.35  # 一次側移多久（秒）
+BOT_DODGE_RECHECK = 0.4  # 躲避判定後多久才會再判定一次（秒）
+
 
 def stone_range(power: float) -> float:
     """Return how far a stone thrown with ``power`` (0~1) flies."""
@@ -136,9 +157,13 @@ class StoneBattle:
 
     def __init__(
         self, players: list[dict[str, Any]], prep_epoch: float, prep_sec: float, play_sec: float,
-        hp: int, rng: random.Random | None = None,
+        hp: int, rng: random.Random | None = None, bots: int = 0,
     ) -> None:
-        """Place ``players`` ([{id, name, label}]) on the spawn points and scatter the first stones."""
+        """Place ``players`` ([{id, name, label}]) and ``bots`` computers on the spawn points and scatter the first stones.
+
+        Computers get ids -1, -2, ...; they never report and are moved by the
+        engine inside ``_step``. ``bots=0`` (the real contest) behaves exactly as before.
+        """
         self.rng = rng or random.SystemRandom()
         self.lock = threading.Lock()
         self.play_start = prep_epoch + prep_sec
@@ -147,16 +172,24 @@ class StoneBattle:
         self.t = self.play_start  # 模擬時間
         self.finished_at: float | None = None
         self.ranking: list[dict[str, Any]] | None = None
-        self.roster = [{"id": p["id"], "name": p["name"], "label": p.get("label")} for p in players]
+        self.bots = bots
+        self.roster = [{"id": p["id"], "name": p["name"], "label": p.get("label"), "bot": False} for p in players]
+        self.roster += [{"id": -(i + 1), "name": BOT_NAMES[i % len(BOT_NAMES)], "label": None, "bot": True}
+                        for i in range(bots)]
         self.players: dict[int, dict[str, Any]] = {}
-        for i, p in enumerate(players):
+        for i, r in enumerate(self.roster):
             x, y = SPAWNS[i % len(SPAWNS)]
             fx, fy = snap8(MAP_W / 2 - x, MAP_H / 2 - y)  # 一開始面向地圖中央
-            self.players[p["id"]] = {
-                "id": p["id"], "x": x, "y": y, "fx": fx, "fy": fy, "hp": hp, "gifts": 0, "stones": 0,
+            self.players[r["id"]] = {
+                "id": r["id"], "x": x, "y": y, "fx": fx, "fy": fy, "hp": hp, "gifts": 0, "stones": 0,
                 "alive": True, "inv_until": 0.0, "died_at": None, "cool_until": 0.0,
-                "checked_at": self.play_start, "budget": 0.5, "seq": -1,
+                "checked_at": self.play_start, "budget": 0.5, "seq": -1, "bot": r["bot"],
             }
+            if r["bot"]:
+                self.players[r["id"]].update({
+                    "think_at": self.play_start + self.rng.uniform(*BOT_REACT), "goal": None, "path": [],
+                    "aim": None, "daze_until": 0.0, "dodge": None, "dodge_until": 0.0, "dodge_check": 0.0,
+                })
         self.items: list[dict[str, Any]] = []
         self.shots: list[dict[str, Any]] = []
         self._next_id = 1
@@ -192,6 +225,10 @@ class StoneBattle:
     def _step(self) -> None:
         """Advance one fixed step: monsters, stones and fire in flight, pickups, spawns, live frames, early end."""
         self.t += DT
+        if self.bots:
+            for p in self.players.values():
+                if p["bot"] and p["alive"]:
+                    self._bot(p)
         if len(self.monsters) < MONSTER_MAX and self.t >= self.next_monster:
             self._spawn_monster()
             self.next_monster = self.t + MONSTER_RESPAWN_SEC
@@ -212,6 +249,8 @@ class StoneBattle:
         alive = sum(1 for p in self.players.values() if p["alive"])
         if len(self.players) >= 2 and alive <= 1:
             self._finish(self.t)
+        elif self.bots and not any(p["alive"] and not p["bot"] for p in self.players.values()):
+            self._finish(self.t)  # 試玩：真人都倒了就不用等電腦打完
 
     def _move_shots(self) -> None:
         """Fly stones and fire in two half-steps; each stops at walls, at the end of its range, or on a target.
@@ -346,7 +385,8 @@ class StoneBattle:
         order.sort(key=lambda p: (p["id"] not in pool, -p["gifts"], -p["hp"]))
         names = {r["id"]: r["name"] for r in self.roster}
         self.ranking = [
-            {"rank": i + 1, "id": p["id"], "name": names[p["id"]], "gifts": p["gifts"], "hp": p["hp"], "alive": p["alive"]}
+            {"rank": i + 1, "id": p["id"], "name": names[p["id"]], "gifts": p["gifts"], "hp": p["hp"],
+             "alive": p["alive"], "bot": p["bot"]}
             for i, p in enumerate(order)
         ]
         self.shots = []
@@ -354,8 +394,233 @@ class StoneBattle:
 
     @property
     def winner(self) -> int | None:
-        """Return the winner's player id once the match is over."""
-        return self.ranking[0]["id"] if self.ranking else None
+        """Return the best real player's id once the match is over (computers cannot take the gift)."""
+        if not self.ranking:
+            return None
+        return next((r["id"] for r in self.ranking if not r["bot"]), None)
+
+    # ---------- 電腦玩家（試玩用） ----------
+
+    def _bot(self, p: dict[str, Any]) -> None:
+        """Drive one computer player for one step, under the same rules as a real player.
+
+        Order: daze -> dodge -> throw when lined up -> re-think the goal every
+        BOT_REACT seconds -> walk along the path at BOT_SPEED (walls block, items
+        on the way are picked up by ``_pickups``).
+        """
+        if self.t < p["daze_until"]:
+            return
+        if self.rng.random() < BOT_DAZE_PER_SEC * DT:
+            p["daze_until"] = self.t + BOT_DAZE_SEC  # 偶爾發呆
+            return
+        if self.t < p["dodge_until"] and p["dodge"]:
+            if self._bot_walk(p, p["dodge"]):
+                return
+            p["dodge_until"] = 0.0
+        elif self.t >= p["dodge_check"]:
+            side = self._bot_threat(p)
+            if side is not None:
+                p["dodge_check"] = self.t + BOT_DODGE_RECHECK
+                if self.rng.random() < BOT_DODGE_CHANCE:
+                    p["dodge"], p["dodge_until"] = side, self.t + BOT_DODGE_SEC
+                    p["path"] = []
+                    self._bot_walk(p, side)
+                    return
+        if self._bot_try_throw(p):
+            return
+        if self.t >= p["think_at"]:
+            self._bot_think(p)
+            p["think_at"] = self.t + self.rng.uniform(*BOT_REACT)
+        self._bot_follow(p)
+
+    def _bot_targets(self, p: dict[str, Any]) -> list[tuple[float, dict[str, Any]]]:
+        """Return (weighted distance, target) for every other live player and every monster, nearest first."""
+        out = [(math.hypot(q["x"] - p["x"], q["y"] - p["y"]), q) for q in self.players.values()
+               if q["alive"] and q["id"] != p["id"]]
+        out += [(math.hypot(m["x"] - p["x"], m["y"] - p["y"]) * BOT_MONSTER_BIAS, m) for m in self.monsters]
+        out.sort(key=lambda e: e[0])
+        return out
+
+    def _bot_think(self, p: dict[str, Any]) -> None:
+        """Pick where to go: stones first when empty-handed, else a target's firing line (sometimes a gift)."""
+        def near(kind: str) -> list[tuple[float, dict[str, Any]]]:
+            got = [(math.hypot(i["x"] - p["x"], i["y"] - p["y"]), i) for i in self.items if i["k"] == kind
+                   and not (kind == "gift" and i.get("lock") == p["id"] and self.t < i["until"])]
+            return sorted(got, key=lambda e: e[0])
+
+        stones, gifts, heals = near("stone"), near("gift"), near("heal")
+        goal = None
+        p["aim"] = None
+        if p["stones"] == 0:
+            if stones:
+                goal = (stones[0][1]["x"], stones[0][1]["y"])
+            elif gifts:
+                goal = (gifts[0][1]["x"], gifts[0][1]["y"])
+        elif gifts and (gifts[0][0] < BOT_GIFT_NEAR or self.rng.random() < BOT_GIFT_CHANCE):
+            goal = (gifts[0][1]["x"], gifts[0][1]["y"])
+        elif heals and p["hp"] < self.max_hp and heals[0][0] < BOT_GIFT_NEAR:
+            goal = (heals[0][1]["x"], heals[0][1]["y"])
+        elif stones and p["stones"] < MAX_STONES and stones[0][0] < BOT_STONE_NEAR:
+            goal = (stones[0][1]["x"], stones[0][1]["y"])
+        else:
+            targets = self._bot_targets(p)
+            if targets:
+                q = targets[0][1]
+                p["aim"] = q
+                # 站到目標的 8 方向射線上（優先選靠自己這側的射線），保持一段距離
+                d = math.hypot(p["x"] - q["x"], p["y"] - q["y"])
+                keep = min(BOT_KEEP_DIST[1], max(BOT_KEEP_DIST[0], d))
+                rays = [(a, b) for a in (-1, 0, 1) for b in (-1, 0, 1) if (a, b) != (0, 0)]
+                rays.sort(key=lambda v: -((p["x"] - q["x"]) * v[0] + (p["y"] - q["y"]) * v[1]) / math.hypot(*v))
+                for sx, sy in rays:
+                    n = math.hypot(sx, sy)
+                    gx, gy = q["x"] + sx / n * keep, q["y"] + sy / n * keep
+                    if not blocked(gx, gy):
+                        goal = (gx, gy)
+                        break
+        p["goal"] = goal
+        p["path"] = self._bot_path(p, goal) if goal else []
+
+    def _bot_path(self, p: dict[str, Any], goal: tuple[float, float]) -> list[tuple[float, float]]:
+        """Return waypoints from the bot to ``goal``: tile BFS around obstacles, then shortcut straight runs."""
+        start = (math.floor(p["x"]), math.floor(p["y"]))
+        end = (math.floor(goal[0]), math.floor(goal[1]))
+        prev: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
+        queue = deque([start])
+        while queue and end not in prev:
+            cx, cy = queue.popleft()
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                nx, ny = cx + dx, cy + dy
+                if (nx, ny) in prev or solid(nx, ny):
+                    continue
+                if dx and dy and (solid(cx + dx, cy) or solid(cx, cy + dy)):
+                    continue  # 斜走不切牆角
+                prev[(nx, ny)] = (cx, cy)
+                queue.append((nx, ny))
+        if end not in prev:
+            return [goal]
+        tiles = []
+        node: tuple[int, int] | None = end
+        while node is not None and node != start:
+            tiles.append(node)
+            node = prev[node]
+        tiles.reverse()
+        pts = [(tx + 0.5, ty + 0.5) for tx, ty in tiles[:-1]] + [goal]
+        # 走得到直線的就跳過中間點
+        out = []
+        cur = (p["x"], p["y"])
+        i = 0
+        while i < len(pts):
+            j = len(pts) - 1
+            while j > i and not self._bot_clear(cur, pts[j], RADIUS):
+                j -= 1
+            out.append(pts[j])
+            cur = pts[j]
+            i = j + 1
+        return out
+
+    @staticmethod
+    def _bot_clear(a: tuple[float, float], b: tuple[float, float], r: float) -> bool:
+        """Return True when a body of half-size ``r`` can go straight from ``a`` to ``b`` (r=0: a stone's line)."""
+        dist = math.hypot(b[0] - a[0], b[1] - a[1])
+        steps = max(1, math.ceil(dist / 0.2))
+        for k in range(1, steps + 1):
+            x, y = a[0] + (b[0] - a[0]) * k / steps, a[1] + (b[1] - a[1]) * k / steps
+            if blocked(x, y, r) if r > 0 else solid(math.floor(x), math.floor(y)):
+                return False
+        return True
+
+    def _bot_follow(self, p: dict[str, Any]) -> None:
+        """Walk toward the next waypoint; drop it once reached, re-think soon when stuck."""
+        while p["path"] and math.hypot(p["path"][0][0] - p["x"], p["path"][0][1] - p["y"]) < 0.1:
+            p["path"].pop(0)
+        if not p["path"]:
+            p["goal"] = None
+            if p["aim"] is not None:  # 到定位了：轉身面向目標
+                f = snap8(p["aim"]["x"] - p["x"], p["aim"]["y"] - p["y"])
+                if f != (0, 0):
+                    p["fx"], p["fy"] = f
+            return
+        wx, wy = p["path"][0]
+        dx, dy = wx - p["x"], wy - p["y"]
+        d = math.hypot(dx, dy)
+        if not self._bot_walk(p, (dx / d, dy / d), min(SPEED * BOT_SPEED * DT, d)):
+            p["path"] = []
+            p["goal"] = None
+            p["think_at"] = min(p["think_at"], self.t + 0.2)  # 卡住：稍後重想
+
+    def _bot_walk(self, p: dict[str, Any], v: tuple[float, float], dist: float | None = None) -> bool:
+        """Move along unit vector ``v`` (sliding along walls) and face that way; False when fully blocked."""
+        step = SPEED * BOT_SPEED * DT if dist is None else dist
+        for mx, my in ((v[0], v[1]), (v[0], 0.0), (0.0, v[1])):
+            if abs(mx) < 1e-6 and abs(my) < 1e-6:
+                continue
+            nx, ny = p["x"] + mx * step, p["y"] + my * step
+            if not blocked(nx, ny):
+                p["x"], p["y"] = nx, ny
+                f = snap8(v[0], v[1])
+                if f != (0, 0):
+                    p["fx"], p["fy"] = f
+                return True
+        return False
+
+    def _bot_try_throw(self, p: dict[str, Any]) -> bool:
+        """Throw at a target lined up on one of the 8 directions, in range and in sight; sometimes miss."""
+        if p["stones"] <= 0 or self.t < p["cool_until"]:
+            return False
+        for _, q in self._bot_targets(p):
+            dx, dy = q["x"] - p["x"], q["y"] - p["y"]
+            dist = math.hypot(dx, dy)
+            if dist > STONE_RANGE_MAX - BOT_RANGE_EXTRA:
+                continue
+            sx, sy = snap8(dx, dy)
+            n = math.hypot(sx, sy) or 1
+            off = abs(dx * sy / n - dy * sx / n)  # 離 8 方向射線的垂直距離
+            if off >= BOT_AIM_OFF or not self._bot_clear((p["x"], p["y"]), (q["x"], q["y"]), 0):
+                continue
+            power = (dist + BOT_RANGE_EXTRA - STONE_RANGE_MIN) / (STONE_RANGE_MAX - STONE_RANGE_MIN)
+            if self.rng.random() < BOT_MISS_CHANCE:
+                if self.rng.random() < 0.5:  # 偏 45 度
+                    a = math.atan2(sy, sx) + self.rng.choice((-1, 1)) * math.pi / 4
+                    sx, sy = round(math.cos(a)), round(math.sin(a))
+                else:  # 力道不足，掉在目標前面
+                    power = (dist - self.rng.uniform(1.5, 3.0) - STONE_RANGE_MIN) / (STONE_RANGE_MAX - STONE_RANGE_MIN)
+            p["fx"], p["fy"] = sx, sy
+            if self._throw(p, min(1.0, max(0.0, power))):
+                p["cool_until"] = self.t + THROW_COOLDOWN + self.rng.uniform(*BOT_THROW_REACT)
+                return True
+            return False
+        return False
+
+    def _bot_threat(self, p: dict[str, Any]) -> tuple[float, float] | None:
+        """Return a sidestep direction when fire/a stone flies at the bot or a loaded monster lines it up."""
+        lines = []
+        for s in self.shots:
+            if s["owner"] == p["id"]:
+                continue
+            sp = math.hypot(s["vx"], s["vy"]) or 1
+            ux, uy = s["vx"] / sp, s["vy"] / sp
+            rx, ry = p["x"] - s["x"], p["y"] - s["y"]
+            along = rx * ux + ry * uy
+            if 0 < along < min(BOT_DODGE_LOOK, s["left"] + HIT_RADIUS) and abs(rx * uy - ry * ux) < HIT_RADIUS + 0.4:
+                lines.append((ux, uy, rx, ry))
+        for m in self.monsters:
+            if m["ammo"] <= 0 or self.t < m["cool_until"] - 0.3:
+                continue
+            rx, ry = p["x"] - m["x"], p["y"] - m["y"]
+            sx, sy = snap8(rx, ry)
+            n = math.hypot(sx, sy) or 1
+            if math.hypot(rx, ry) <= FIRE_RANGE and abs(rx * sy / n - ry * sx / n) < FIRE_AIM_OFF + 0.3:
+                lines.append((sx / n, sy / n, rx, ry))  # 被怪物鎖定
+        if not lines:
+            return None
+        ux, uy, rx, ry = lines[0]
+        side = 1 if rx * uy - ry * ux >= 0 else -1  # 往已經偏離射線的那一側閃
+        for sgn in (side, -side):
+            v = (uy * sgn, -ux * sgn)
+            if not blocked(p["x"] + v[0] * 0.5, p["y"] + v[1] * 0.5):
+                return v
+        return None
 
     # ---------- 黑色怪物 ----------
 
@@ -474,8 +739,8 @@ class StoneBattle:
         with self.lock:
             self._advance(now)
             p = self.players.get(pid)
-            if p is None:
-                return None
+            if p is None or p["bot"]:
+                return None  # 電腦由伺服器自己動，不接受回報
             corrected = False
             if self.phase(now) == "play" and p["alive"]:
                 stale = seq is not None and seq <= p["seq"]

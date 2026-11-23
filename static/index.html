@@ -40,6 +40,11 @@
       <canvas id="wall-sign" width="400" height="176"></canvas>
       <ol id="stage-bar" aria-label="活動進度"></ol>
       <p id="wall-hint">猜猜哪個是你的禮物？</p>
+      <!-- 寫好禮物描述後：交換禮物規則（公布標籤、交換禮物）、小遊戲試玩（只在公布標籤） -->
+      <div id="wall-actions" hidden>
+        <button id="xr-btn" type="button" class="pixel-btn big-act">交換禮物規則</button>
+        <button id="practice-btn" type="button" class="pixel-btn big-act play">小遊戲試玩</button>
+      </div>
     </header>
     <div id="gifts"></div>
   </section>
@@ -66,6 +71,7 @@
           <label for="user-pw-input">一般人暗號<small>（一次修改所有非管理員）</small></label>
           <input id="user-pw-input" name="password" autocomplete="off" required>
           <button type="submit" class="pixel-btn small">全部套用</button>
+          <small id="user-pw-off" class="bulk-off" hidden>公布標籤之後大家都有自己的暗號，不能再一次全改</small>
         </form>
         <div id="people-list"></div>
         <form id="people-add" class="people-row add-row">
@@ -74,7 +80,7 @@
           <label class="chk"><input name="admin" type="checkbox">管理者</label>
           <button type="submit" class="pixel-btn small">新增</button>
         </form>
-        <p class="admin-note">每列依序是英文名字、動物、暗號。新增的一般人暗號同上方「一般人暗號」，管理者為 eva；勾選或取消管理者時若沒改暗號，會自動換成該身分的暗號；刪除會釋放他認領的禮物</p>
+        <p class="admin-note">每列依序是英文名字、動物、暗號。新增的一般人暗號同上方「一般人暗號」，管理者為 eva；勾選或取消管理者時若沒改暗號，會自動換成該身分的暗號；刪除會釋放他認領的禮物。公布標籤之後只看得到自己的暗號，別人的顯示 ****，忘記暗號可按「重設」改回預設暗號，他下次登入要再設一次</p>
       </section>
       <p id="admin-msg" class="error" hidden></p>
       <button id="admin-close" type="button" class="link-btn">關閉</button>
@@ -142,6 +148,30 @@
     </form>
   </div>
 
+  <!-- 公布標籤起：一般人登入後要先改成自己的暗號（只改一次） -->
+  <div id="pw-editor" class="overlay" hidden>
+    <form id="pw-form" class="card">
+      <h2 class="card-title picker-title">設定你自己的暗號</h2>
+      <p class="card-sub">從現在起要用自己的暗號登入，管理者也看不到</p>
+      <label>新暗號
+        <input id="pw-new" type="password" autocomplete="new-password" required>
+      </label>
+      <label>再輸入一次
+        <input id="pw-confirm" type="password" autocomplete="new-password" required>
+      </label>
+      <p id="pw-error" class="error" hidden></p>
+      <button type="submit" class="pixel-btn">送出</button>
+    </form>
+  </div>
+
+  <!-- 交換禮物規則（內容在 exchange_rules.js，試玩大廳共用） -->
+  <div id="xr" class="overlay" hidden>
+    <div class="card xr-card">
+      <div id="xr-body"></div>
+      <button id="xr-close" type="button" class="pixel-btn">知道了</button>
+    </div>
+  </div>
+
   <!-- 管理者切換階段時，還有人沒完成：列出名字 -->
   <div id="stage-block" class="overlay" hidden>
     <div class="card">
@@ -161,6 +191,7 @@
   <script src="ep6.js"></script>
   <script src="ep7.js"></script>
   <script src="ep8.js"></script>
+  <script src="exchange_rules.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>小遊戲試玩大廳</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="sandbox/exchange.css">
+  <link rel="stylesheet" href="practice.css">
+</head>
+<body>
+  <!-- 試玩大廳：公布標籤階段、寫好禮物描述的人，自己＋3 個電腦練習五款小遊戲；只在伺服器記憶體，不影響正式交換禮物 -->
+  <section id="pr" class="screen">
+    <header class="pr-head">
+      <h1 class="pr-title">小遊戲試玩大廳</h1>
+      <p class="pr-sub">自己＋3 個電腦，隨便玩，不會影響正式交換禮物</p>
+      <p id="pr-note" class="pr-note">若發現操作上有 bug 等問題，記得回報給<b id="pr-admins">管理者</b>，確保交換禮物當天的權益不會受損！</p>
+      <nav class="pr-tabs" aria-label="大廳分頁">
+        <button id="tab-games" type="button" class="pixel-btn small pr-tab current">小遊戲</button>
+        <button id="tab-rules" type="button" class="pixel-btn small pr-tab">交換禮物規則</button>
+        <button id="pr-home" type="button" class="pixel-btn small pr-home">回禮物牆</button>
+      </nav>
+    </header>
+
+    <!-- 1. 五個遊戲入口 -->
+    <div id="pr-lobby" class="pr-lobby"></div>
+
+    <!-- 2. 選好遊戲：看完規則按開始 -->
+    <div id="pr-intro" class="card pr-intro" hidden>
+      <h2 id="pr-intro-name" class="card-title picker-title"></h2>
+      <p id="pr-intro-meta" class="card-sub"></p>
+      <ul id="pr-intro-rules" class="pr-rules"></ul>
+      <p id="pr-error" class="error" hidden></p>
+      <button id="pr-start" type="button" class="pixel-btn">開始遊戲</button>
+      <button id="pr-intro-back" type="button" class="link-btn">回大廳</button>
+    </div>
+
+    <!-- 3. 交換禮物規則（內容在 exchange_rules.js，與禮物牆共用） -->
+    <div id="pr-xr" class="card xr-card pr-xr" hidden></div>
+
+    <!-- 4. 對戰：沿用交換禮物遊戲的五個小遊戲畫面 -->
+    <div id="pr-play" hidden>
+      <div class="ex-stage">
+        <canvas id="pr-bg" width="1280" height="760"></canvas>
+        <div id="mg" class="mg" hidden>
+          <canvas id="mg-canvas" width="1280" height="760"></canvas>
+          <div id="mg-timer" class="mg-timer"></div>
+          <div id="mg-hud" class="mg-hud" hidden></div>
+          <ol id="mg-board" class="mg-board"></ol>
+          <div id="mg-live" class="mg-live" hidden></div>
+          <div id="mg-center" class="mg-center" hidden></div>
+        </div>
+        <div id="cg" class="mg" hidden>
+          <canvas id="cg-canvas" width="1280" height="760"></canvas>
+          <div id="cg-timer" class="mg-timer"></div>
+          <div id="cg-hud" class="mg-hud" hidden></div>
+          <div id="cg-live" class="mg-live" hidden></div>
+          <div id="cg-center" class="mg-center" hidden></div>
+        </div>
+        <div id="jg" class="mg" hidden>
+          <canvas id="jg-canvas" width="1280" height="760"></canvas>
+          <div id="jg-timer" class="mg-timer"></div>
+          <div id="jg-hud" class="mg-hud" hidden></div>
+          <ol id="jg-board" class="mg-board"></ol>
+          <div id="jg-live" class="mg-live" hidden></div>
+          <div id="jg-center" class="mg-center" hidden></div>
+        </div>
+        <div id="sg" class="mg" hidden>
+          <canvas id="sg-canvas" width="1280" height="760"></canvas>
+          <div id="sg-timer" class="mg-timer"></div>
+          <div id="sg-hud" class="mg-hud" hidden></div>
+          <ol id="sg-board" class="mg-board"></ol>
+          <div id="sg-live" class="mg-live" hidden></div>
+          <div id="sg-center" class="mg-center" hidden></div>
+        </div>
+        <div id="mm" class="mg" hidden>
+          <canvas id="mm-canvas" width="1280" height="760"></canvas>
+          <div id="mm-timer" class="mg-timer"></div>
+          <div id="mm-hud" class="mg-hud" hidden></div>
+          <ol id="mm-board" class="mg-board"></ol>
+          <div id="mm-live" class="mg-live" hidden></div>
+          <div id="mm-center" class="mg-center" hidden></div>
+        </div>
+      </div>
+      <div class="pr-ctrl">
+        <button id="pr-again" type="button" class="pixel-btn small" hidden>再玩一次</button>
+        <button id="pr-leave" type="button" class="pixel-btn small pr-home">回大廳</button>
+      </div>
+    </div>
+
+    <!-- 沒有登入（直接開網址、重新整理）：請他從禮物牆進來 -->
+    <div id="pr-nologin" class="card pr-intro" hidden>
+      <h2 class="card-title picker-title">請先登入</h2>
+      <p class="card-sub">從禮物牆按「小遊戲試玩」進來</p>
+      <a class="pixel-btn" href="/">回首頁登入</a>
+    </div>
+  </section>
+
+  <script src="exchange_rules.js"></script>
+  <script src="sandbox/minigame.js"></script>
+  <script src="sandbox/countgame.js"></script>
+  <script src="sandbox/climbgame.js"></script>
+  <script src="sandbox/spellgame.js"></script>
+  <script src="sandbox/momgame.js"></script>
+  <script src="practice.js"></script>
+</body>
+</html>

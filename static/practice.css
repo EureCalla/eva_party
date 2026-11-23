@@ -1,0 +1,90 @@
+/* 試玩大廳：沿用 style.css 的色票、卡片、按鈕；對戰畫面沿用 sandbox/exchange.css 的 .ex-stage／.mg */
+
+#pr {
+  display: block;
+  background:
+    repeating-linear-gradient(to bottom, var(--wall) 0 56px, var(--wall-line) 56px 64px);
+  padding: 16px 16px 40px;
+}
+.pr-head { text-align: center; margin-bottom: 18px; }
+.pr-title { margin: 0; color: var(--cream); font-size: clamp(1.4rem, 5vw, 2.2rem); letter-spacing: 0.12em; }
+.pr-sub { margin: 4px 0 14px; color: var(--dress); font-size: clamp(0.85rem, 3.4vw, 1.05rem); }
+/* 特別備註：有 bug 回報給管理者 */
+.pr-note {
+  width: min(640px, 100%);
+  box-sizing: border-box;
+  margin: 0 auto 14px;
+  padding: 8px 12px;
+  color: var(--outline);
+  background: var(--yellow, #FFE7A3);
+  border: 3px solid var(--outline);
+  box-shadow: 4px 4px 0 var(--deep);
+  font-size: clamp(0.85rem, 3.2vw, 1rem);
+  line-height: 1.5;
+}
+.pr-note b { color: var(--pink); }
+.pr-note[hidden] { display: none; }
+.pr-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.pr-tabs[hidden] { display: none; }
+.pr-tab { background: var(--cream); color: var(--deep); }
+.pr-tab.current { background: var(--pink); color: var(--cream); }
+.pixel-btn.pr-home { background: var(--outline); }
+
+/* 五個遊戲入口 */
+.pr-lobby {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+.pr-lobby[hidden] { display: none; }
+.pr-closed {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px;
+  text-align: center;
+  color: var(--cream);
+  background: var(--outline);
+  border: 3px solid var(--cream);
+}
+.pr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  font: inherit;
+  text-align: left;
+  color: var(--outline);
+  background: var(--cream);
+  border: 4px solid var(--outline);
+  box-shadow: 5px 5px 0 var(--deep);
+  cursor: pointer;
+}
+.pr-card:hover { background: var(--dress); }
+.pr-card:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0 var(--deep); }
+.pr-card-name { font-size: 1.3rem; font-weight: 700; color: var(--pink); letter-spacing: 0.08em; }
+.pr-card-meta { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+.pr-badge { padding: 0 6px; color: var(--cream); background: var(--blue); border: 2px solid var(--outline); }
+.pr-badge.mouse { background: var(--pink); }
+.pr-card-go { margin-top: auto; align-self: flex-end; font-size: 0.9rem; color: var(--blue); font-weight: 700; }
+
+/* 規則頁與交換禮物規則 */
+.pr-intro, .pr-xr { width: min(640px, 100%); margin: 0 auto; box-sizing: border-box; }
+.pr-intro[hidden], .pr-xr[hidden] { display: none; }
+.pr-rules { margin: 0; padding-left: 1.3em; font-size: 0.95rem; line-height: 1.6; }
+.pr-rules li + li { margin-top: 6px; }
+.pr-rules b { color: var(--pink); }
+#pr-nologin a { text-decoration: none; text-align: center; }
+
+/* 對戰 */
+#pr-play[hidden] { display: none; }
+#pr-bg { width: 100%; display: block; background: var(--outline); }
+.pr-ctrl {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}

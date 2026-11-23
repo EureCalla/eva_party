@@ -25,7 +25,7 @@ STAGES: list[tuple[str, str]] = [
 STAGE_KEYS: list[str] = [k for k, _ in STAGES]
 
 # 交換禮物遊戲：聚光燈每份禮物倒數秒數、每份禮物最多幾位挑戰者（不含候選人）、每人初始搶奪券
-EXCHANGE_ROUND_SEC: int = 180
+EXCHANGE_ROUND_SEC: int = 120
 MAX_CHALLENGERS: int = 5
 START_TICKETS: int = 5
 
@@ -43,6 +43,8 @@ CLIMB_GAME_SEC: int = 90  # 往上跳跳樂時間（1.5 分鐘）
 SPELL_GAME_SEC: int = 60  # 鍵盤詠唱師時間（1 分鐘，每 5 秒一組字母）
 MOM_GAME_SEC: int = 120  # 誰是乖孩子時間（2 分鐘，滑鼠操作）
 SPIN_SEC: int = 3  # 進小遊戲前的轉盤秒數；轉完才公開這局玩哪一種
+PRACTICE_PREP_SEC: int = 3  # 試玩大廳：規則在大廳看過了，按開始後只倒數 3 秒
+PRACTICE_BOTS: int = 3  # 試玩大廳：自己＋3 個電腦
 
 # 沙盒：設計新階段畫面用，與正式 server／正式 DB 完全分開，驗收後才合併
 # sandbox.db 由 tools/build_sandbox_db.py 從正式 DB 唯讀複製產生，不進版控（.gitignore 的 *.db）
